@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import aiosqlite
-from aiogram.types import User
+from aiogram.types import Contact, User
 
 
 class EventStorage:
@@ -24,6 +24,10 @@ class EventStorage:
                     username TEXT,
                     first_name TEXT,
                     last_name TEXT,
+                    phone_number TEXT,
+                    contact_first_name TEXT,
+                    contact_last_name TEXT,
+                    contact_received_at TEXT,
                     language_code TEXT,
                     first_seen_at TEXT NOT NULL,
                     last_seen_at TEXT NOT NULL,
@@ -49,6 +53,7 @@ class EventStorage:
                 ON events (telegram_id, created_at)
                 """
             )
+            await self._ensure_user_contact_columns(db)
             await db.commit()
 
     async def record_start(self, user: User) -> bool:
@@ -159,6 +164,54 @@ class EventStorage:
                 (telegram_id, event_type, serialized_payload, _utc_now()),
             )
             await db.commit()
+
+    async def save_contact(self, user: User, contact: Contact) -> None:
+        await self.ensure_user(user)
+        now = _utc_now()
+        async with aiosqlite.connect(self.database_path) as db:
+            await db.execute(
+                """
+                UPDATE users
+                SET phone_number = ?,
+                    contact_first_name = ?,
+                    contact_last_name = ?,
+                    contact_received_at = ?,
+                    last_seen_at = ?
+                WHERE telegram_id = ?
+                """,
+                (
+                    contact.phone_number,
+                    contact.first_name,
+                    contact.last_name,
+                    now,
+                    now,
+                    user.id,
+                ),
+            )
+            await db.commit()
+
+        await self.add_event(
+            user.id,
+            "contact_shared",
+            {
+                "has_phone_number": bool(contact.phone_number),
+                "contact_user_id": contact.user_id,
+            },
+        )
+
+    async def _ensure_user_contact_columns(self, db: aiosqlite.Connection) -> None:
+        async with db.execute("PRAGMA table_info(users)") as cursor:
+            existing_columns = {row[1] for row in await cursor.fetchall()}
+
+        required_columns = {
+            "phone_number": "TEXT",
+            "contact_first_name": "TEXT",
+            "contact_last_name": "TEXT",
+            "contact_received_at": "TEXT",
+        }
+        for column_name, column_type in required_columns.items():
+            if column_name not in existing_columns:
+                await db.execute(f"ALTER TABLE users ADD COLUMN {column_name} {column_type}")
 
 
 async def _fetch_one(

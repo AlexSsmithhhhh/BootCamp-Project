@@ -3,29 +3,35 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from aiogram.types import User
+from aiogram.types import Contact, User
 
 from app.storage import EventStorage
 
 
 class EventStorageTests(unittest.IsolatedAsyncioTestCase):
-    async def test_records_starts_and_discord_click(self) -> None:
+    async def test_records_starts_and_contact(self) -> None:
         with TemporaryDirectory() as tmp_dir:
             database_path = Path(tmp_dir) / "bot.sqlite3"
             storage = EventStorage(database_path)
             await storage.init()
 
             user = User(id=1001, is_bot=False, first_name="Alex", username="alex")
+            contact = Contact(
+                phone_number="+380501112233",
+                first_name="Alex",
+                user_id=user.id,
+            )
 
             self.assertTrue(await storage.record_start(user))
             self.assertFalse(await storage.record_start(user))
-            await storage.add_event(user.id, "discord_cta_click")
+            await storage.save_contact(user, contact)
+            await storage.add_event(user.id, "discord_access_sent")
 
             with sqlite3.connect(database_path) as db:
-                start_count = db.execute(
-                    "SELECT start_count FROM users WHERE telegram_id = ?",
+                start_count, phone_number = db.execute(
+                    "SELECT start_count, phone_number FROM users WHERE telegram_id = ?",
                     (user.id,),
-                ).fetchone()[0]
+                ).fetchone()
                 event_types = [
                     row[0]
                     for row in db.execute(
@@ -34,7 +40,11 @@ class EventStorageTests(unittest.IsolatedAsyncioTestCase):
                 ]
 
         self.assertEqual(start_count, 2)
-        self.assertEqual(event_types, ["start", "start_repeat", "discord_cta_click"])
+        self.assertEqual(phone_number, "+380501112233")
+        self.assertEqual(
+            event_types,
+            ["start", "start_repeat", "contact_shared", "discord_access_sent"],
+        )
 
 
 if __name__ == "__main__":

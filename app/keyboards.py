@@ -1,21 +1,25 @@
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+)
 
 from app import content
 
 
-DISCORD_CTA_CALLBACK = "discord_cta"
-
-
-def start_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
+def contact_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
             [
-                InlineKeyboardButton(
-                    text=content.START_CTA_BUTTON_TEXT,
-                    callback_data=DISCORD_CTA_CALLBACK,
+                KeyboardButton(
+                    text=content.SHARE_CONTACT_BUTTON_TEXT,
+                    request_contact=True,
                 )
             ]
-        ]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True,
     )
 
 
