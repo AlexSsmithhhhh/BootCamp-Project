@@ -379,7 +379,11 @@ class EventStorage:
                 SELECT 1
                 FROM users
                 WHERE telegram_id = ?
-                  AND contact_received_at IS NOT NULL
+                  AND (
+                    contact_received_at IS NOT NULL
+                    OR phone_number IS NOT NULL
+                    OR discord_invite_sent_at IS NOT NULL
+                  )
                 """,
                 (telegram_id,),
             )

@@ -196,7 +196,7 @@ def admin_commands(router) -> None:
         )
 
     @router.message(Command("new_post", "newpost"))
-    @router.message(AdminOnly(), TextCommand("new post"))
+    @router.message(TextCommand("new post"))
     async def handle_new_post(message: Message, storage: EventStorage, settings: Settings) -> None:
         if not is_admin(message, settings):
             await deny_non_admin(message)
@@ -249,7 +249,7 @@ def admin_commands(router) -> None:
         await callback.answer()
 
     @router.message(Command("all_post"))
-    @router.message(AdminOnly(), TextCommand("all post"))
+    @router.message(TextCommand("all post"))
     async def handle_all_post(message: Message, storage: EventStorage, settings: Settings) -> None:
         if not is_admin(message, settings):
             await deny_non_admin(message)
@@ -268,8 +268,15 @@ def admin_commands(router) -> None:
             return
         await delete_scheduled_job_from_text(message, storage, command.args)
 
-    @router.message(AdminOnly(), TextCommandStartsWith("delete"))
-    async def handle_delete_text(message: Message, storage: EventStorage) -> None:
+    @router.message(TextCommandStartsWith("delete"))
+    async def handle_delete_text(
+        message: Message,
+        storage: EventStorage,
+        settings: Settings,
+    ) -> None:
+        if not is_admin(message, settings):
+            await deny_non_admin(message)
+            return
         await delete_scheduled_job_from_text(
             message,
             storage,
@@ -277,7 +284,7 @@ def admin_commands(router) -> None:
         )
 
     @router.message(Command("analytics"))
-    @router.message(AdminOnly(), TextCommand("analytics"))
+    @router.message(TextCommand("analytics"))
     async def handle_analytics(message: Message, storage: EventStorage, settings: Settings) -> None:
         if not is_admin(message, settings):
             await deny_non_admin(message)
