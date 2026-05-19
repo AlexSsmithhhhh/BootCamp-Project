@@ -84,6 +84,19 @@ class EventStorage:
             )
             await db.execute(
                 """
+                CREATE TABLE IF NOT EXISTS admin_post_drafts (
+                    admin_id INTEGER PRIMARY KEY,
+                    mode TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    scheduled_at TEXT,
+                    media_group_id TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            await db.execute(
+                """
                 CREATE INDEX IF NOT EXISTS idx_events_telegram_id_created_at
                 ON events (telegram_id, created_at)
                 """
@@ -489,6 +502,71 @@ class EventStorage:
             ) as cursor:
                 rows = await cursor.fetchall()
         return [dict(row) for row in rows]
+
+    async def save_admin_post_draft(
+        self,
+        *,
+        admin_id: int,
+        mode: str,
+        status: str,
+        scheduled_at: Optional[datetime] = None,
+        media_group_id: Optional[str] = None,
+    ) -> None:
+        now = _utc_now()
+        scheduled_at_value = None
+        if scheduled_at is not None:
+            scheduled_at_value = _datetime_to_utc_iso(scheduled_at)
+        async with aiosqlite.connect(self.database_path) as db:
+            await db.execute(
+                """
+                INSERT INTO admin_post_drafts (
+                    admin_id, mode, status, scheduled_at, media_group_id,
+                    created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(admin_id) DO UPDATE SET
+                    mode = excluded.mode,
+                    status = excluded.status,
+                    scheduled_at = excluded.scheduled_at,
+                    media_group_id = excluded.media_group_id,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    admin_id,
+                    mode,
+                    status,
+                    scheduled_at_value,
+                    media_group_id,
+                    now,
+                    now,
+                ),
+            )
+            await db.commit()
+
+    async def admin_post_draft(self, admin_id: int) -> Optional[dict[str, Any]]:
+        async with aiosqlite.connect(self.database_path) as db:
+            db.row_factory = aiosqlite.Row
+            row = await _fetch_one(
+                db,
+                """
+                SELECT admin_id, mode, status, scheduled_at, media_group_id,
+                       created_at, updated_at
+                FROM admin_post_drafts
+                WHERE admin_id = ?
+                """,
+                (admin_id,),
+            )
+        if row is None:
+            return None
+        return dict(row)
+
+    async def clear_admin_post_draft(self, admin_id: int) -> None:
+        async with aiosqlite.connect(self.database_path) as db:
+            await db.execute(
+                "DELETE FROM admin_post_drafts WHERE admin_id = ?",
+                (admin_id,),
+            )
+            await db.commit()
 
     async def save_admin_media(
         self,

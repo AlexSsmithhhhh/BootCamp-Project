@@ -104,6 +104,10 @@ railway.cmd logs --service "bootcamp-discord-bot" --environment "production" --l
 Admin-команды Telegram:
 
 - `/admin_help` - список команд.
+- `/new_post` или `new post` - мастер создания поста: выбрать "сейчас" или "запланировать", затем отправить контент.
+- `/all_post` или `all post` - список запланированных публикаций.
+- `/delete ID` или `delete ID` - отменить запланированную публикацию.
+- `/analytics` или `analytics` - краткая аналитика Telegram-бота.
 - `/post текст` - сразу опубликовать пост в `TELEGRAM_CHANNEL_ID`.
 - `/post` ответом на фото/альбом/видео/PDF - опубликовать это медиа в `TELEGRAM_CHANNEL_ID`.
 - Фото/видео/PDF с caption `/post текст` - сразу опубликовать медиа с подписью, без отдельной команды.
@@ -125,6 +129,14 @@ Media workflow:
 3. Текст после команды становится caption. Для отложенных медиа caption пишется после `|`, например `/schedule_post 2026-05-20 14:00 | Caption`.
 4. Быстрый вариант для немедленной отправки: caption самого медиа начинается с `/post текст` или `/broadcast текст`.
 5. Альбомы кешируются в SQLite table `admin_media_cache`, а готовый payload для отложенной отправки хранится в `scheduled_jobs.payload`.
+
+New post wizard:
+
+1. Admin writes `/new_post` or `new post`.
+2. Bot asks whether to publish now or schedule.
+3. For schedule, admin sends date/time in `YYYY-MM-DD HH:MM`.
+4. Bot asks for content; admin sends text, photo, photo album, video, or PDF/document. Caption becomes post text for media.
+5. `/all_post` shows scheduled jobs and `/delete ID` cancels a scheduled job.
 
 Время в командах планирования вводится в timezone `Europe/Kiev`. Задания хранятся в SQLite table `scheduled_jobs` и выполняются фоновым worker внутри Telegram-сервиса.
 

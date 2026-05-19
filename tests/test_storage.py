@@ -146,6 +146,31 @@ class EventStorageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([item["file_id"] for item in media], ["photo-1", "photo-2"])
         self.assertEqual(media[0]["caption"], "Album caption")
 
+    async def test_admin_post_draft_lifecycle(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            database_path = Path(tmp_dir) / "bot.sqlite3"
+            storage = EventStorage(database_path)
+            await storage.init()
+
+            scheduled_at = datetime.now(timezone.utc)
+            await storage.save_admin_post_draft(
+                admin_id=1001,
+                mode="scheduled",
+                status="awaiting_content",
+                scheduled_at=scheduled_at,
+                media_group_id="album-1",
+            )
+
+            draft = await storage.admin_post_draft(1001)
+            await storage.clear_admin_post_draft(1001)
+            deleted_draft = await storage.admin_post_draft(1001)
+
+        self.assertIsNotNone(draft)
+        self.assertEqual(draft["mode"], "scheduled")
+        self.assertEqual(draft["status"], "awaiting_content")
+        self.assertEqual(draft["media_group_id"], "album-1")
+        self.assertIsNone(deleted_draft)
+
 
 if __name__ == "__main__":
     unittest.main()
