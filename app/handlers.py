@@ -15,6 +15,7 @@ router = Router()
 admin_commands(router)
 known_contact_user_ids: set[int] = set()
 logger = logging.getLogger(__name__)
+CONTACT_PROMPT_COOLDOWN_SECONDS = 6 * 60 * 60
 
 
 async def has_contact_access(storage: EventStorage, user_id: int) -> bool:
@@ -24,6 +25,39 @@ async def has_contact_access(storage: EventStorage, user_id: int) -> bool:
         known_contact_user_ids.add(user_id)
         return True
     return False
+
+
+def is_command_text(message: Message) -> bool:
+    text = (message.text or "").strip()
+    return text.startswith("/")
+
+
+async def send_contact_prompt(
+    message: Message,
+    storage: EventStorage,
+    *,
+    force: bool = False,
+    quiet_if_recent: bool = False,
+) -> None:
+    if message.from_user is None:
+        return
+
+    should_prompt = force or await storage.should_prompt_contact(
+        message.from_user.id,
+        cooldown_seconds=CONTACT_PROMPT_COOLDOWN_SECONDS,
+    )
+    if should_prompt:
+        await storage.mark_contact_prompted(message.from_user)
+        await message.answer(content.CONTACT_REQUIRED_MESSAGE, reply_markup=contact_keyboard())
+        return
+
+    if quiet_if_recent:
+        return
+
+    await message.answer(
+        "Контакт уже запрошен. Поделись номером через кнопку внизу чата, чтобы открыть доступ.",
+        reply_markup=contact_keyboard(),
+    )
 
 
 @router.message(CommandStart())
@@ -50,6 +84,7 @@ async def handle_start(
         return
 
     await message.answer(content.START_MESSAGE, reply_markup=contact_keyboard())
+    await storage.mark_contact_prompted(message.from_user)
 
 
 @router.message(Command("help"))
@@ -57,6 +92,27 @@ async def handle_help(message: Message, storage: EventStorage) -> None:
     if message.from_user is not None:
         await storage.record_message_interaction(message.from_user, "help_requested")
     await message.answer(content.HELP_MESSAGE)
+
+
+@router.message(Command("discord", "access"))
+async def handle_discord_link(
+    message: Message,
+    storage: EventStorage,
+    settings: Settings,
+) -> None:
+    if message.from_user is None:
+        return
+
+    await storage.record_message_interaction(message.from_user, "discord_link_requested")
+    if await has_contact_access(storage, message.from_user.id):
+        await storage.mark_discord_access_sent(message.from_user)
+        await message.answer(
+            content.DISCORD_LINK_MESSAGE,
+            reply_markup=discord_url_keyboard(settings.discord_invite_url),
+        )
+        return
+
+    await send_contact_prompt(message, storage, force=False, quiet_if_recent=False)
 
 
 @router.message(F.contact)
@@ -68,7 +124,7 @@ async def handle_contact(
     if message.from_user is None or message.contact is None:
         return
 
-    if message.contact.user_id != message.from_user.id:
+    if message.contact.user_id not in (None, message.from_user.id):
         await storage.ensure_user(message.from_user)
         await storage.add_event(message.from_user.id, "contact_rejected_not_own")
         await message.answer(content.CONTACT_NOT_OWN_MESSAGE, reply_markup=contact_keyboard())
@@ -94,7 +150,6 @@ async def handle_fallback(
     settings: Settings,
 ) -> None:
     if message.from_user is None:
-        await message.answer(content.CONTACT_REQUIRED_MESSAGE, reply_markup=contact_keyboard())
         return
 
     has_contact = await has_contact_access(storage, message.from_user.id)
@@ -126,9 +181,13 @@ async def handle_fallback(
 
     if has_contact:
         await message.answer(
-            content.DISCORD_LINK_MESSAGE,
-            reply_markup=discord_url_keyboard(settings.discord_invite_url),
+            "Доступ уже открыт. Если нужна ссылка снова, отправь /discord.",
+            reply_markup=ReplyKeyboardRemove(),
         )
         return
 
-    await message.answer(content.CONTACT_REQUIRED_MESSAGE, reply_markup=contact_keyboard())
+    if is_command_text(message):
+        await send_contact_prompt(message, storage, force=False, quiet_if_recent=False)
+        return
+
+    await send_contact_prompt(message, storage, force=False, quiet_if_recent=True)

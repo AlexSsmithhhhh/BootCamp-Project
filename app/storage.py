@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import parse_qs
@@ -389,6 +389,63 @@ class EventStorage:
             )
         return row is not None
 
+    async def should_prompt_contact(
+        self,
+        telegram_id: int,
+        cooldown_seconds: int = 600,
+    ) -> bool:
+        async with aiosqlite.connect(self.database_path) as db:
+            row = await _fetch_one(
+                db,
+                """
+                SELECT
+                    phone_number,
+                    contact_received_at,
+                    discord_invite_sent_at,
+                    last_contact_prompt_at
+                FROM users
+                WHERE telegram_id = ?
+                """,
+                (telegram_id,),
+            )
+
+        if row is None:
+            return True
+
+        phone_number, contact_received_at, discord_invite_sent_at, last_contact_prompt_at = row
+        if phone_number or contact_received_at or discord_invite_sent_at:
+            return False
+        if not last_contact_prompt_at:
+            return True
+
+        try:
+            last_prompt_dt = datetime.fromisoformat(last_contact_prompt_at)
+        except ValueError:
+            return True
+        if last_prompt_dt.tzinfo is None:
+            last_prompt_dt = last_prompt_dt.replace(tzinfo=timezone.utc)
+
+        now = datetime.now(timezone.utc)
+        return now - last_prompt_dt >= timedelta(seconds=cooldown_seconds)
+
+    async def mark_contact_prompted(self, user: User) -> None:
+        await self.ensure_user(user)
+        now = _utc_now()
+        async with aiosqlite.connect(self.database_path) as db:
+            await db.execute(
+                """
+                UPDATE users
+                SET last_contact_prompt_at = ?,
+                    last_seen_at = ?,
+                    last_interaction_at = ?
+                WHERE telegram_id = ?
+                """,
+                (now, now, now, user.id),
+            )
+            await db.commit()
+
+        await self.add_event(user.id, "contact_prompt_sent")
+
     async def create_scheduled_job(
         self,
         *,
@@ -693,6 +750,7 @@ class EventStorage:
             "contact_first_name": "TEXT",
             "contact_last_name": "TEXT",
             "contact_received_at": "TEXT",
+            "last_contact_prompt_at": "TEXT",
         }
         for column_name, column_type in required_columns.items():
             if column_name not in existing_columns:

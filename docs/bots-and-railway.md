@@ -144,6 +144,8 @@ Contact gate:
 - A user shares phone contact only once.
 - After `contact_received_at` is saved in SQLite, `/start` and fallback messages no longer ask for the phone number again.
 - Known users get the Discord link directly.
+- Added `/discord` (alias `/access`) to resend the Discord invite on demand.
+- Contact prompt is rate-limited (`last_contact_prompt_at`) so the bot does not spam "share phone" on every message.
 
 Время в командах планирования вводится в timezone `Europe/Kiev`. Задания хранятся в SQLite table `scheduled_jobs` и выполняются фоновым worker внутри Telegram-сервиса.
 
