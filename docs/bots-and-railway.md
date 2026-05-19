@@ -105,7 +105,7 @@ railway.cmd logs --service "bootcamp-discord-bot" --environment "production" --l
 Admin-команды Telegram:
 
 - `/admin_help` - список команд.
-- `/new_post` или `new post` - мастер создания поста: выбрать "сейчас" или "запланировать", затем отправить контент.
+- `/new_post`, `/newpost` или `new post` - мастер создания поста: выбрать "сейчас" или "запланировать", затем отправить контент.
 - `/all_post` или `all post` - список запланированных публикаций.
 - `/delete ID` или `delete ID` - отменить запланированную публикацию.
 - `/analytics` или `analytics` - краткая аналитика Telegram-бота.
@@ -133,11 +133,17 @@ Media workflow:
 
 New post wizard:
 
-1. Admin writes `/new_post` or `new post`.
+1. Admin writes `/new_post`, `/newpost` or `new post`.
 2. Bot asks whether to publish now or schedule.
 3. For schedule, admin sends date/time in `YYYY-MM-DD HH:MM`.
 4. Bot asks for content; admin sends text, photo, photo album, video, or PDF/document. Caption becomes post text for media.
 5. `/all_post` shows scheduled jobs and `/delete ID` cancels a scheduled job.
+
+Contact gate:
+
+- A user shares phone contact only once.
+- After `contact_received_at` is saved in SQLite, `/start` and fallback messages no longer ask for the phone number again.
+- Known users get the Discord link directly.
 
 Время в командах планирования вводится в timezone `Europe/Kiev`. Задания хранятся в SQLite table `scheduled_jobs` и выполняются фоновым worker внутри Telegram-сервиса.
 

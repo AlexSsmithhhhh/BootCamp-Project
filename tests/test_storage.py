@@ -27,7 +27,9 @@ class EventStorageTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertTrue(await storage.record_start(user))
             self.assertFalse(await storage.record_start(user))
+            self.assertFalse(await storage.user_has_contact(user.id))
             await storage.save_contact(user, contact)
+            self.assertTrue(await storage.user_has_contact(user.id))
             await storage.mark_discord_access_sent(user)
             overview = await storage.analytics_overview()
 

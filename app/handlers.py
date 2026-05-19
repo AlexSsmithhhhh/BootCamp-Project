@@ -3,7 +3,7 @@ from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import Message, ReplyKeyboardRemove
 
 from app import content
-from app.admin import admin_commands
+from app.admin import admin_commands, is_admin
 from app.config import Settings
 from app.keyboards import contact_keyboard, discord_url_keyboard
 from app.storage import EventStorage
@@ -18,9 +18,21 @@ async def handle_start(
     message: Message,
     command: CommandObject,
     storage: EventStorage,
+    settings: Settings,
 ) -> None:
     if message.from_user is not None:
         await storage.record_start(message.from_user, command.args)
+        if await storage.user_has_contact(message.from_user.id):
+            await storage.mark_discord_access_sent(message.from_user)
+            await message.answer(
+                "Контакт уже сохранен. Повторно делиться номером не нужно.",
+                reply_markup=ReplyKeyboardRemove(),
+            )
+            await message.answer(
+                content.DISCORD_LINK_MESSAGE,
+                reply_markup=discord_url_keyboard(settings.discord_invite_url),
+            )
+            return
 
     await message.answer(content.START_MESSAGE, reply_markup=contact_keyboard())
 
@@ -60,7 +72,11 @@ async def handle_contact(
 
 
 @router.message()
-async def handle_fallback(message: Message, storage: EventStorage) -> None:
+async def handle_fallback(
+    message: Message,
+    storage: EventStorage,
+    settings: Settings,
+) -> None:
     if message.from_user is not None:
         await storage.record_message_interaction(
             message.from_user,
@@ -71,4 +87,15 @@ async def handle_fallback(message: Message, storage: EventStorage) -> None:
                 "text_length": len(message.text or ""),
             },
         )
+        if is_admin(message, settings):
+            await message.answer(
+                "Не понял команду. Для постов используй <code>new post</code> или <code>/newpost</code>."
+            )
+            return
+        if await storage.user_has_contact(message.from_user.id):
+            await message.answer(
+                content.DISCORD_LINK_MESSAGE,
+                reply_markup=discord_url_keyboard(settings.discord_invite_url),
+            )
+            return
     await message.answer(content.CONTACT_REQUIRED_MESSAGE, reply_markup=contact_keyboard())

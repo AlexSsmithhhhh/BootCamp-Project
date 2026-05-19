@@ -195,7 +195,7 @@ def admin_commands(router) -> None:
             )
         )
 
-    @router.message(Command("new_post"))
+    @router.message(Command("new_post", "newpost"))
     @router.message(AdminOnly(), TextCommand("new post"))
     async def handle_new_post(message: Message, storage: EventStorage, settings: Settings) -> None:
         if not is_admin(message, settings):
@@ -1060,6 +1060,10 @@ def normalize_plain_command(value: Optional[str]) -> Optional[str]:
         normalized = command
         if rest:
             normalized = f"{normalized} {rest[0]}"
+    if normalized.startswith("newpost"):
+        normalized = normalized.replace("newpost", "new post", 1)
+    if normalized.startswith("allpost"):
+        normalized = normalized.replace("allpost", "all post", 1)
     return " ".join(normalized.split())
 
 

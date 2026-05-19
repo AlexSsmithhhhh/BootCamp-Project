@@ -30,7 +30,9 @@ class AdminCommandTests(unittest.TestCase):
 
     def test_normalizes_plain_commands(self) -> None:
         self.assertEqual(normalize_plain_command("/new_post"), "new post")
+        self.assertEqual(normalize_plain_command("/newpost"), "new post")
         self.assertEqual(normalize_plain_command("all post"), "all post")
+        self.assertEqual(normalize_plain_command("allpost"), "all post")
         self.assertEqual(normalize_plain_command("/delete 7"), "delete 7")
 
     def test_parses_post_schedule_input_as_utc(self) -> None:

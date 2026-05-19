@@ -371,6 +371,20 @@ class EventStorage:
                 rows = await cursor.fetchall()
         return [int(row[0]) for row in rows]
 
+    async def user_has_contact(self, telegram_id: int) -> bool:
+        async with aiosqlite.connect(self.database_path) as db:
+            row = await _fetch_one(
+                db,
+                """
+                SELECT 1
+                FROM users
+                WHERE telegram_id = ?
+                  AND contact_received_at IS NOT NULL
+                """,
+                (telegram_id,),
+            )
+        return row is not None
+
     async def create_scheduled_job(
         self,
         *,
