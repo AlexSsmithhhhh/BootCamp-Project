@@ -101,7 +101,7 @@ export const config = {
         key: 'forex',
         roleId: optionalString('REACTION_ROLE_FOREX_ROLE_ID'),
         roleNames: optionalCsvArray('REACTION_ROLE_FOREX_ROLE_NAMES', ['Forex']),
-        emojis: new Set(optionalCsvArray('REACTION_ROLE_FOREX_EMOJIS', ['\u{1F5FA}'])),
+        emojis: new Set(optionalCsvArray('REACTION_ROLE_FOREX_EMOJIS', ['\u{1F4C9}', '\u{1F5FA}'])),
       },
       {
         key: 'crypto',
