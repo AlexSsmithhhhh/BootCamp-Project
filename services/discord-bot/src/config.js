@@ -22,6 +22,16 @@ function optionalNumber(name, fallback) {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
+function optionalString(...names) {
+  for (const name of names) {
+    const value = process.env[name]?.trim();
+    if (value) {
+      return value;
+    }
+  }
+  return null;
+}
+
 const runningOnRailway = Boolean(process.env.RAILWAY_ENVIRONMENT);
 const defaultDataDir = runningOnRailway
   ? (process.env.RAILWAY_VOLUME_MOUNT_PATH || '/app/data')
@@ -43,6 +53,11 @@ export const config = {
     || process.env.DISCORD_LEADERBOARD_CHANNEL_ID
     || process.env.DASHBOARD_CHANNEL_ID
     || null,
+  dashboardMessageId: optionalString(
+    'LEADERBOARD_MESSAGE_ID',
+    'DISCORD_LEADERBOARD_MESSAGE_ID',
+    'DASHBOARD_MESSAGE_ID',
+  ),
   mentorRoleNames: (
     process.env.LEADERBOARD_MENTOR_ROLE_NAMES
     || 'mentor,support,ментор,саппорт,наставник'

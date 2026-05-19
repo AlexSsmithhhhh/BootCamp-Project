@@ -18,6 +18,7 @@
 Рабочие Railway-переменные:
 
 - `LEADERBOARD_CHANNEL_ID` - канал dashboard. Сейчас это `leaderboard`.
+- `LEADERBOARD_MESSAGE_ID` - fixed dashboard message. If it is set, the bot edits only this message and never creates a replacement automatically.
 - `LEADERBOARD_WORKING_CHANNEL_IDS` - рабочие чаты. Сейчас это `fx-chat` и `crypto-chat`.
 
 Данные хранятся в `/app/data/discord-leaderboard.json` на Railway volume.

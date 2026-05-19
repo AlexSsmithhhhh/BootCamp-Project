@@ -123,6 +123,7 @@ railway.cmd up ".\services\discord-bot" --path-as-root --service "bootcamp-disco
 Текущая Railway-настройка:
 
 - `LEADERBOARD_CHANNEL_ID` = канал `leaderboard`.
+- `LEADERBOARD_MESSAGE_ID` = fixed Discord message id for the public dashboard. When this is set, the bot edits only that message and does not auto-create another dashboard if the message cannot be fetched or edited.
 - `LEADERBOARD_WORKING_CHANNEL_IDS` = `fx-chat`, `crypto-chat`.
 - роли Mentor/Support определяются по названиям ролей `Mentor` и `Support`.
 

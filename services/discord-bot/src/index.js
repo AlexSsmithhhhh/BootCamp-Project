@@ -71,6 +71,9 @@ client.once(Events.ClientReady, async () => {
   console.log(`Bot online: ${client.user.tag} (${client.user.id})`);
   console.log(`Leaderboard data: ${config.dataPath}`);
   console.log(
+    `Leaderboard dashboard: channel=${config.dashboardChannelId || 'auto'} message=${config.dashboardMessageId || 'auto'}`,
+  );
+  console.log(
     `Invite: https://discord.com/oauth2/authorize?client_id=${config.clientId}&permissions=1099780074646&scope=bot%20applications.commands`,
   );
 

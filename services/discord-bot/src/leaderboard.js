@@ -172,18 +172,66 @@ export function userLikeFromMemberOrUser(memberOrUser) {
 }
 
 export async function updateDashboard(client, storage, config, { forceChannelId = null } = {}) {
-  const channelId = forceChannelId || storage.state.dashboard.channelId || config.dashboardChannelId;
+  const fixedMessageId = config.dashboardMessageId;
+  const channelId = fixedMessageId
+    ? config.dashboardChannelId
+    : (forceChannelId || storage.state.dashboard.channelId || config.dashboardChannelId);
   if (!channelId) {
     return { updated: false, reason: 'missing_channel' };
   }
 
-  const channel = await client.channels.fetch(channelId);
+  let channel = null;
+  try {
+    channel = await client.channels.fetch(channelId);
+  } catch (error) {
+    console.error(`Failed to fetch leaderboard dashboard channel ${channelId}:`, error);
+    return { updated: false, reason: 'channel_fetch_failed', channelId };
+  }
+
   if (!channel?.isTextBased()) {
     return { updated: false, reason: 'channel_not_text' };
   }
 
   const embed = createLeaderboardEmbed(storage, config);
   let message = null;
+
+  if (fixedMessageId) {
+    try {
+      message = await channel.messages.fetch(fixedMessageId);
+    } catch (error) {
+      console.error(
+        `Fixed leaderboard dashboard message ${fixedMessageId} was not found in channel ${channel.id}. ` +
+          'No new dashboard message will be created while LEADERBOARD_MESSAGE_ID is set.',
+        error,
+      );
+      return {
+        updated: false,
+        reason: 'fixed_message_not_found',
+        channelId: channel.id,
+        messageId: fixedMessageId,
+      };
+    }
+
+    try {
+      await message.edit({ embeds: [embed] });
+    } catch (error) {
+      console.error(
+        `Failed to edit fixed leaderboard dashboard message ${fixedMessageId}. ` +
+          'Check that the message belongs to this bot and that it can edit messages in the dashboard channel.',
+        error,
+      );
+      return {
+        updated: false,
+        reason: 'fixed_message_edit_failed',
+        channelId: channel.id,
+        messageId: fixedMessageId,
+      };
+    }
+
+    await storage.setDashboard(channel.id, message.id);
+    return { updated: true, messageId: message.id, fixed: true };
+  }
+
   if (storage.state.dashboard.messageId) {
     try {
       message = await channel.messages.fetch(storage.state.dashboard.messageId);
