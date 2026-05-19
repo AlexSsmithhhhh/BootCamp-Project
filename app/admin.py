@@ -43,11 +43,21 @@ class TextCommandStartsWith(BaseFilter):
 
 
 def is_admin(message: Message, settings: Settings) -> bool:
-    return bool(message.from_user and message.from_user.id in settings.telegram_admin_ids)
+    if message.from_user is None:
+        return False
+    return is_admin_identity(
+        user_id=message.from_user.id,
+        username=message.from_user.username,
+        settings=settings,
+    )
 
 
-def is_admin_user(user_id: int, settings: Settings) -> bool:
-    return user_id in settings.telegram_admin_ids
+def is_admin_identity(user_id: int, username: Optional[str], settings: Settings) -> bool:
+    if user_id in settings.telegram_admin_ids:
+        return True
+    if username is None:
+        return False
+    return username.lower() in settings.telegram_admin_usernames
 
 
 async def deny_non_admin(message: Message) -> None:
@@ -210,7 +220,7 @@ def admin_commands(router) -> None:
         storage: EventStorage,
         settings: Settings,
     ) -> None:
-        if not is_admin_user(callback.from_user.id, settings):
+        if not is_admin_identity(callback.from_user.id, callback.from_user.username, settings):
             await callback.answer("Доступно только администратору.", show_alert=True)
             return
 

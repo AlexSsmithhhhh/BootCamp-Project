@@ -1,11 +1,15 @@
 import unittest
 from datetime import timezone
+from pathlib import Path
+from unittest.mock import patch
 
 from app.admin import (
+    is_admin_identity,
     normalize_plain_command,
     parse_media_caption_command,
     parse_post_schedule_input,
 )
+from app.config import Settings
 
 
 class AdminCommandTests(unittest.TestCase):
@@ -34,6 +38,37 @@ class AdminCommandTests(unittest.TestCase):
 
         self.assertIsNotNone(parsed)
         self.assertEqual(parsed.tzinfo, timezone.utc)
+
+    def test_admin_identity_supports_ids_and_usernames(self) -> None:
+        settings = Settings(
+            telegram_bot_token="token",
+            discord_invite_url="https://discord.gg/test",
+            database_path=Path("data/bot.sqlite3"),
+            telegram_admin_ids=frozenset({1001}),
+            telegram_admin_usernames=frozenset({"qweertyck"}),
+            telegram_channel_id="@channel",
+            scheduler_poll_interval_seconds=30,
+        )
+
+        self.assertTrue(is_admin_identity(1001, None, settings))
+        self.assertTrue(is_admin_identity(2002, "qweertyck", settings))
+        self.assertTrue(is_admin_identity(2002, "QWEERTYCK", settings))
+        self.assertFalse(is_admin_identity(2002, "someoneelse", settings))
+
+    def test_settings_reads_admin_usernames(self) -> None:
+        env = {
+            "TELEGRAM_BOT_TOKEN": "token",
+            "DISCORD_INVITE_URL": "https://discord.gg/test",
+            "TELEGRAM_ADMIN_USERNAMES": "@qweertyck, smthhhhhh",
+        }
+
+        with patch.dict("os.environ", env, clear=True):
+            settings = Settings.from_env(env_file=None)
+
+        self.assertEqual(
+            settings.telegram_admin_usernames,
+            frozenset({"qweertyck", "smthhhhhh"}),
+        )
 
 
 if __name__ == "__main__":

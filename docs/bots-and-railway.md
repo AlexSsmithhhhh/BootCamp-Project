@@ -98,6 +98,7 @@ railway.cmd logs --service "bootcamp-discord-bot" --environment "production" --l
 Дополнительные переменные для admin-команд Telegram:
 
 - `TELEGRAM_ADMIN_IDS` - comma-separated Telegram user IDs администраторов, которым доступны публикации и рассылки.
+- `TELEGRAM_ADMIN_USERNAMES` - optional comma-separated Telegram usernames без `@`; удобно, когда числовой user ID еще неизвестен.
 - `TELEGRAM_CHANNEL_ID` - канал для публикаций, например `@channel_name` или `-100...`.
 - `SCHEDULER_POLL_INTERVAL_SECONDS` - частота проверки отложенных заданий, по умолчанию `30`.
 

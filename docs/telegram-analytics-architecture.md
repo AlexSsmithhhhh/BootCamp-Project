@@ -89,7 +89,7 @@ https://t.me/<bot_username>?start=utm_source=instagram&campaign=bootcamp_week
 
 ## Admin Publications And Broadcasts
 
-Admin-команды доступны только Telegram user IDs из `TELEGRAM_ADMIN_IDS`.
+Admin-команды доступны Telegram user IDs из `TELEGRAM_ADMIN_IDS` и usernames из `TELEGRAM_ADMIN_USERNAMES`.
 
 Команды:
 

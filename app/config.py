@@ -18,6 +18,7 @@ class Settings:
     discord_invite_url: str
     database_path: Path
     telegram_admin_ids: frozenset[int]
+    telegram_admin_usernames: frozenset[str]
     telegram_channel_id: Optional[str]
     scheduler_poll_interval_seconds: int
 
@@ -30,6 +31,7 @@ class Settings:
         discord_invite_url = _required_env("DISCORD_INVITE_URL")
         database_path = Path(os.getenv("DATABASE_PATH", "data/bot.sqlite3"))
         telegram_admin_ids = _optional_int_set("TELEGRAM_ADMIN_IDS")
+        telegram_admin_usernames = _optional_string_set("TELEGRAM_ADMIN_USERNAMES")
         telegram_channel_id = _optional_env("TELEGRAM_CHANNEL_ID")
         scheduler_poll_interval_seconds = _optional_positive_int(
             "SCHEDULER_POLL_INTERVAL_SECONDS",
@@ -44,6 +46,7 @@ class Settings:
             discord_invite_url=discord_invite_url,
             database_path=database_path,
             telegram_admin_ids=telegram_admin_ids,
+            telegram_admin_usernames=telegram_admin_usernames,
             telegram_channel_id=telegram_channel_id,
             scheduler_poll_interval_seconds=scheduler_poll_interval_seconds,
         )
@@ -74,6 +77,16 @@ def _optional_int_set(name: str) -> frozenset[int]:
             values.add(int(stripped))
         except ValueError as exc:
             raise ConfigurationError(f"{name} must contain only comma-separated Telegram user IDs.") from exc
+    return frozenset(values)
+
+
+def _optional_string_set(name: str) -> frozenset[str]:
+    raw_value = os.getenv(name, "")
+    values: set[str] = set()
+    for item in raw_value.split(","):
+        stripped = item.strip().lstrip("@").lower()
+        if stripped:
+            values.add(stripped)
     return frozenset(values)
 
 
