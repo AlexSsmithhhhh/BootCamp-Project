@@ -98,6 +98,10 @@ client.once(Events.ClientReady, async () => {
   console.log(
     `Invite: https://discord.com/oauth2/authorize?client_id=${config.clientId}&permissions=1099780074646&scope=bot%20applications.commands`,
   );
+  console.log(
+    `Reaction roles: messageIds=${[...config.reactionRoles.messageIds].join(',') || 'auto'} ` +
+      `channels=${[...config.reactionRoles.channelIds].join(',') || 'start-here by name'}`,
+  );
 
   try {
     const backfill = await backfillLeaderboardHistory(client, storage, config);

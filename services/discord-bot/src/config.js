@@ -92,6 +92,7 @@ export const config = {
   stageMinMs: optionalNumber('LEADERBOARD_STAGE_MIN_MS', 15 * 60 * 1000),
   timeZone: process.env.LEADERBOARD_TIME_ZONE || 'Europe/Kiev',
   reactionRoles: {
+    messageIds: optionalCsv('REACTION_ROLE_MESSAGE_IDS'),
     channelIds: optionalCsv('REACTION_ROLE_CHANNEL_IDS'),
     memberRoleId: optionalString('REACTION_ROLE_MEMBER_ROLE_ID'),
     memberRoleNames: optionalCsvArray('REACTION_ROLE_MEMBER_ROLE_NAMES', ['Member']),
@@ -100,13 +101,13 @@ export const config = {
         key: 'forex',
         roleId: optionalString('REACTION_ROLE_FOREX_ROLE_ID'),
         roleNames: optionalCsvArray('REACTION_ROLE_FOREX_ROLE_NAMES', ['Forex']),
-        emojis: new Set(optionalCsvArray('REACTION_ROLE_FOREX_EMOJIS', ['🗺'])),
+        emojis: new Set(optionalCsvArray('REACTION_ROLE_FOREX_EMOJIS', ['\u{1F5FA}'])),
       },
       {
         key: 'crypto',
         roleId: optionalString('REACTION_ROLE_CRYPTO_ROLE_ID'),
         roleNames: optionalCsvArray('REACTION_ROLE_CRYPTO_ROLE_NAMES', ['Crypto']),
-        emojis: new Set(optionalCsvArray('REACTION_ROLE_CRYPTO_EMOJIS', ['📈'])),
+        emojis: new Set(optionalCsvArray('REACTION_ROLE_CRYPTO_EMOJIS', ['\u{1F4C8}'])),
       },
     ],
   },

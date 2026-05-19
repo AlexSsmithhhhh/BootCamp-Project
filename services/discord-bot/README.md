@@ -43,6 +43,7 @@ In `start-here`, direction reactions grant access roles:
 
 Optional Railway variables:
 
+- `REACTION_ROLE_MESSAGE_IDS` - specific welcome message IDs for reaction roles (recommended).
 - `REACTION_ROLE_CHANNEL_IDS` - channel IDs for reaction roles. If empty, the bot uses a `start-here` channel by name.
 - `REACTION_ROLE_MEMBER_ROLE_ID` / `REACTION_ROLE_MEMBER_ROLE_NAMES` - base access role, default `Member`.
 - `REACTION_ROLE_FOREX_ROLE_ID` / `REACTION_ROLE_FOREX_ROLE_NAMES` / `REACTION_ROLE_FOREX_EMOJIS` - Forex direction, default role `Forex`, emoji 🗺.

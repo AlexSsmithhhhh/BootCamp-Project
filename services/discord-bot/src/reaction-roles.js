@@ -5,7 +5,7 @@ export async function applyReactionRole(reaction, user, config) {
     return { handled: false };
   }
 
-  if (!isReactionRoleChannel(reaction.message.channel, config)) {
+  if (!isReactionRoleTarget(reaction.message, config)) {
     return { handled: false };
   }
 
@@ -55,7 +55,7 @@ export async function removeReactionRole(reaction, user, config) {
     return { handled: false };
   }
 
-  if (!isReactionRoleChannel(reaction.message.channel, config)) {
+  if (!isReactionRoleTarget(reaction.message, config)) {
     return { handled: false };
   }
 
@@ -100,7 +100,17 @@ export function directionForEmoji(rawEmojiName, config) {
   return null;
 }
 
-export function isReactionRoleChannel(channel, config) {
+export function isReactionRoleTarget(message, config) {
+  if (!message) {
+    return false;
+  }
+  if (config.reactionRoles.messageIds.size > 0) {
+    return config.reactionRoles.messageIds.has(message.id);
+  }
+  return isReactionRoleChannel(message.channel, config);
+}
+
+function isReactionRoleChannel(channel, config) {
   if (!channel) {
     return false;
   }

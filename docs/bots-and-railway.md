@@ -238,7 +238,7 @@ Discord reaction roles:
 - In `start-here`, 📈 gives `Crypto` + `Member`.
 - `Member` is the base access role and is always granted when a user chooses Forex or Crypto.
 - Removing a direction reaction removes only `Forex`/`Crypto`; `Member` stays because it opens access to the server.
-- Optional env overrides: `REACTION_ROLE_CHANNEL_IDS`, `REACTION_ROLE_MEMBER_ROLE_ID`, `REACTION_ROLE_FOREX_ROLE_ID`, `REACTION_ROLE_CRYPTO_ROLE_ID`.
+- Optional env overrides: `REACTION_ROLE_MESSAGE_IDS`, `REACTION_ROLE_CHANNEL_IDS`, `REACTION_ROLE_MEMBER_ROLE_ID`, `REACTION_ROLE_FOREX_ROLE_ID`, `REACTION_ROLE_CRYPTO_ROLE_ID`.
 
 ## Безопасность
 
