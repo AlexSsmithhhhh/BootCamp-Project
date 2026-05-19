@@ -22,6 +22,14 @@ function optionalNumber(name, fallback) {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
+function optionalBoolean(name, fallback) {
+  const value = process.env[name]?.trim().toLowerCase();
+  if (!value) {
+    return fallback;
+  }
+  return !['0', 'false', 'no', 'off'].includes(value);
+}
+
 function optionalString(...names) {
   for (const name of names) {
     const value = process.env[name]?.trim();
@@ -66,6 +74,9 @@ export const config = {
     .map((item) => item.trim().toLowerCase())
     .filter(Boolean),
   updateEveryMs: optionalNumber('LEADERBOARD_UPDATE_EVERY_MS', 5 * 60 * 1000),
+  backfillOnStartup: optionalBoolean('LEADERBOARD_BACKFILL_ON_STARTUP', true),
+  backfillDays: optionalNumber('LEADERBOARD_BACKFILL_DAYS', 14),
+  backfillMaxMessagesPerChannel: optionalNumber('LEADERBOARD_BACKFILL_MAX_MESSAGES_PER_CHANNEL', 1000),
   messageMinLength: optionalNumber('LEADERBOARD_MESSAGE_MIN_LENGTH', 20),
   messageMinWords: optionalNumber('LEADERBOARD_MESSAGE_MIN_WORDS', 3),
   stageMinMs: optionalNumber('LEADERBOARD_STAGE_MIN_MS', 15 * 60 * 1000),

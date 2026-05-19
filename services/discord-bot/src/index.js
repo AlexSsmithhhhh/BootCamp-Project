@@ -11,6 +11,7 @@ import {
   SlashCommandBuilder,
 } from 'discord.js';
 
+import { backfillLeaderboardHistory } from './backfill.js';
 import { config } from './config.js';
 import {
   createLeaderboardEmbed,
@@ -76,6 +77,20 @@ client.once(Events.ClientReady, async () => {
   console.log(
     `Invite: https://discord.com/oauth2/authorize?client_id=${config.clientId}&permissions=1099780074646&scope=bot%20applications.commands`,
   );
+
+  try {
+    const backfill = await backfillLeaderboardHistory(client, storage, config);
+    if (backfill.enabled) {
+      console.log(
+        'Leaderboard backfill: ' +
+          `channels=${backfill.channels} scanned=${backfill.scannedMessages} ` +
+          `messagePoints=${backfill.awardedMessagePoints} reactionPoints=${backfill.awardedReactionPoints} ` +
+          `duplicates=${backfill.duplicateMessages + backfill.duplicateReactions}`,
+      );
+    }
+  } catch (error) {
+    console.error('Failed to backfill leaderboard history:', error);
+  }
 
   const dashboard = await updateDashboard(client, storage, config);
   if (!dashboard.updated) {

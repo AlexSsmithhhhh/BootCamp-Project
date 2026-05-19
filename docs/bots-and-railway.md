@@ -125,6 +125,9 @@ railway.cmd up ".\services\discord-bot" --path-as-root --service "bootcamp-disco
 - `LEADERBOARD_CHANNEL_ID` = канал `leaderboard`.
 - `LEADERBOARD_MESSAGE_ID` = fixed Discord message id for the public dashboard. When this is set, the bot edits only that message and does not auto-create another dashboard if the message cannot be fetched or edited.
 - `LEADERBOARD_WORKING_CHANNEL_IDS` = `fx-chat`, `crypto-chat`.
+- `LEADERBOARD_BACKFILL_ON_STARTUP` = `true` by default; restores recent message/reaction history from working channels after deploy without double-counting already awarded messages.
+- `LEADERBOARD_BACKFILL_DAYS` = `14` by default.
+- `LEADERBOARD_BACKFILL_MAX_MESSAGES_PER_CHANNEL` = `1000` by default.
 - роли Mentor/Support определяются по названиям ролей `Mentor` и `Support`.
 
 ## Безопасность

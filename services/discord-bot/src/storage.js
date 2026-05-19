@@ -81,8 +81,13 @@ export class LeaderboardStorage {
   }
 
   async awardMessage(userLike, meta, scores) {
+    if (meta.messageId && this.state.awardedMessages[meta.messageId]) {
+      return { awarded: 0, duplicate: true };
+    }
+
     const user = this.user(userLike);
-    const daily = this.daily(user);
+    const eventDate = dateFromMeta(meta);
+    const daily = this.daily(user, this.todayKey(eventDate));
     const award = Math.min(scores.message, Math.max(0, scores.messageDailyCap - daily.messagePoints));
     if (award <= 0) {
       return { awarded: 0, capped: true };
@@ -93,14 +98,23 @@ export class LeaderboardStorage {
     user.stats.messagePoints += award;
     user.stats.contentMessages += 1;
     user.lastActiveAt = new Date().toISOString();
-    this.addEvent(user.id, 'message', award, meta);
+    if (meta.messageId) {
+      this.state.awardedMessages[meta.messageId] = user.id;
+    }
+    this.addEvent(user.id, 'message', award, meta, meta.createdAt);
     await this.save();
     return { awarded: award, capped: false };
   }
 
   async awardReaction(userLike, meta, scores) {
+    const reactionKey = reactionAwardKey(meta);
+    if (reactionKey && this.state.awardedReactions[reactionKey]) {
+      return { awarded: 0, duplicate: true };
+    }
+
     const user = this.user(userLike);
-    const daily = this.daily(user);
+    const eventDate = dateFromMeta(meta);
+    const daily = this.daily(user, this.todayKey(eventDate));
     const award = Math.min(
       scores.mentorReaction,
       Math.max(0, scores.mentorReactionDailyCap - daily.reactionPoints),
@@ -114,7 +128,10 @@ export class LeaderboardStorage {
     user.stats.reactionPoints += award;
     user.stats.mentorReactions += 1;
     user.lastActiveAt = new Date().toISOString();
-    this.addEvent(user.id, 'mentor_reaction', award, meta);
+    if (reactionKey) {
+      this.state.awardedReactions[reactionKey] = user.id;
+    }
+    this.addEvent(user.id, 'mentor_reaction', award, meta, meta.createdAt);
     await this.save();
     return { awarded: award, capped: false };
   }
@@ -172,13 +189,13 @@ export class LeaderboardStorage {
     await this.save();
   }
 
-  addEvent(userId, type, points, meta) {
+  addEvent(userId, type, points, meta, createdAt = null) {
     this.state.events.push({
       userId,
       type,
       points,
       meta,
-      createdAt: new Date().toISOString(),
+      createdAt: createdAt || new Date().toISOString(),
     });
     if (this.state.events.length > 1000) {
       this.state.events = this.state.events.slice(-1000);
@@ -210,6 +227,8 @@ function createInitialState() {
     version: 1,
     users: {},
     events: [],
+    awardedMessages: {},
+    awardedReactions: {},
     stageSessions: {},
     dashboard: {
       channelId: null,
@@ -225,10 +244,50 @@ function normalizeState(state) {
     ...state,
     users: state.users || {},
     events: state.events || [],
+    awardedMessages: {
+      ...buildAwardedMessagesFromEvents(state.events || []),
+      ...(state.awardedMessages || {}),
+    },
+    awardedReactions: {
+      ...buildAwardedReactionsFromEvents(state.events || []),
+      ...(state.awardedReactions || {}),
+    },
     stageSessions: state.stageSessions || {},
     dashboard: {
       ...createInitialState().dashboard,
       ...(state.dashboard || {}),
     },
   };
+}
+
+function reactionAwardKey(meta) {
+  if (!meta.messageId || !meta.reactorId || !meta.emoji) {
+    return null;
+  }
+  return `${meta.messageId}:${meta.reactorId}:${meta.emoji}`;
+}
+
+function dateFromMeta(meta) {
+  if (!meta.createdAt) {
+    return new Date();
+  }
+  const date = new Date(meta.createdAt);
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+}
+
+function buildAwardedMessagesFromEvents(events) {
+  return Object.fromEntries(
+    events
+      .filter((event) => event.type === 'message' && event.meta?.messageId)
+      .map((event) => [event.meta.messageId, event.userId]),
+  );
+}
+
+function buildAwardedReactionsFromEvents(events) {
+  return Object.fromEntries(
+    events
+      .map((event) => [reactionAwardKey(event.meta || {}), event])
+      .filter(([key, event]) => key && event.type === 'mentor_reaction')
+      .map(([key, event]) => [key, event.userId]),
+  );
 }
