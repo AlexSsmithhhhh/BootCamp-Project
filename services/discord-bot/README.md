@@ -32,6 +32,22 @@
 
 Данные хранятся в `/app/data/discord-leaderboard.json` на Railway volume.
 
+## Reaction Roles
+
+In `start-here`, direction reactions grant access roles:
+
+- 🗺 -> `Forex` + `Member`
+- 📈 -> `Crypto` + `Member`
+
+`Member` is the base server access role. It is always added when a user chooses Forex or Crypto, and it is not removed if the user later removes a direction reaction. If a user selects both directions, the bot keeps `Member` and grants both `Forex` and `Crypto`.
+
+Optional Railway variables:
+
+- `REACTION_ROLE_CHANNEL_IDS` - channel IDs for reaction roles. If empty, the bot uses a `start-here` channel by name.
+- `REACTION_ROLE_MEMBER_ROLE_ID` / `REACTION_ROLE_MEMBER_ROLE_NAMES` - base access role, default `Member`.
+- `REACTION_ROLE_FOREX_ROLE_ID` / `REACTION_ROLE_FOREX_ROLE_NAMES` / `REACTION_ROLE_FOREX_EMOJIS` - Forex direction, default role `Forex`, emoji 🗺.
+- `REACTION_ROLE_CRYPTO_ROLE_ID` / `REACTION_ROLE_CRYPTO_ROLE_NAMES` / `REACTION_ROLE_CRYPTO_EMOJIS` - Crypto direction, default role `Crypto`, emoji 📈.
+
 ## Local check
 
 ```powershell

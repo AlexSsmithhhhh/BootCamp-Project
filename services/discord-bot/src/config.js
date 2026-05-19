@@ -17,6 +17,14 @@ function optionalCsv(name) {
   );
 }
 
+function optionalCsvArray(name, fallback) {
+  const values = (process.env[name] ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return values.length > 0 ? values : fallback;
+}
+
 function optionalNumber(name, fallback) {
   const value = Number(process.env[name]);
   return Number.isFinite(value) && value > 0 ? value : fallback;
@@ -83,6 +91,25 @@ export const config = {
   manualAwardMaxPoints: optionalNumber('LEADERBOARD_MANUAL_AWARD_MAX_POINTS', 100),
   stageMinMs: optionalNumber('LEADERBOARD_STAGE_MIN_MS', 15 * 60 * 1000),
   timeZone: process.env.LEADERBOARD_TIME_ZONE || 'Europe/Kiev',
+  reactionRoles: {
+    channelIds: optionalCsv('REACTION_ROLE_CHANNEL_IDS'),
+    memberRoleId: optionalString('REACTION_ROLE_MEMBER_ROLE_ID'),
+    memberRoleNames: optionalCsvArray('REACTION_ROLE_MEMBER_ROLE_NAMES', ['Member']),
+    directions: [
+      {
+        key: 'forex',
+        roleId: optionalString('REACTION_ROLE_FOREX_ROLE_ID'),
+        roleNames: optionalCsvArray('REACTION_ROLE_FOREX_ROLE_NAMES', ['Forex']),
+        emojis: new Set(optionalCsvArray('REACTION_ROLE_FOREX_EMOJIS', ['🗺'])),
+      },
+      {
+        key: 'crypto',
+        roleId: optionalString('REACTION_ROLE_CRYPTO_ROLE_ID'),
+        roleNames: optionalCsvArray('REACTION_ROLE_CRYPTO_ROLE_NAMES', ['Crypto']),
+        emojis: new Set(optionalCsvArray('REACTION_ROLE_CRYPTO_EMOJIS', ['📈'])),
+      },
+    ],
+  },
   scores: {
     message: 2,
     messageDailyCap: 30,

@@ -26,6 +26,7 @@ import {
   updateDashboard,
   userLikeFromMemberOrUser,
 } from './leaderboard.js';
+import { applyReactionRole, removeReactionRole } from './reaction-roles.js';
 import { LeaderboardStorage } from './storage.js';
 
 const storage = new LeaderboardStorage(config.dataPath, config.timeZone);
@@ -164,6 +165,32 @@ client.on(Events.MessageReactionAdd, async (reaction, reactor) => {
       return;
     }
     if (reactor.bot || !isPositiveReaction(reaction)) {
+      if (!reactor.bot) {
+        const roleResult = await applyReactionRole(reaction, reactor, config);
+        if (roleResult.handled) {
+          if (roleResult.applied) {
+            console.log(
+              `Applied reaction role: user=${reactor.id} direction=${roleResult.direction} ` +
+                `added=${roleResult.addedRoleIds.join(',') || 'none'}`,
+            );
+          } else {
+            console.log(`Reaction role not applied: user=${reactor.id} reason=${roleResult.reason}`);
+          }
+        }
+      }
+      return;
+    }
+
+    const roleResult = await applyReactionRole(reaction, reactor, config);
+    if (roleResult.handled) {
+      if (roleResult.applied) {
+        console.log(
+          `Applied reaction role: user=${reactor.id} direction=${roleResult.direction} ` +
+            `added=${roleResult.addedRoleIds.join(',') || 'none'}`,
+        );
+      } else {
+        console.log(`Reaction role not applied: user=${reactor.id} reason=${roleResult.reason}`);
+      }
       return;
     }
 
@@ -193,6 +220,31 @@ client.on(Events.MessageReactionAdd, async (reaction, reactor) => {
     }
   } catch (error) {
     console.error('Failed to process reaction:', error);
+  }
+});
+
+client.on(Events.MessageReactionRemove, async (reaction, reactor) => {
+  try {
+    if (reaction.partial) {
+      await reaction.fetch();
+    }
+    if (reaction.message.partial) {
+      await reaction.message.fetch();
+    }
+    if (!reaction.message.guild || reaction.message.guildId !== config.guildId || reactor.bot) {
+      return;
+    }
+
+    const roleResult = await removeReactionRole(reaction, reactor, config);
+    if (roleResult.handled) {
+      if (roleResult.removed) {
+        console.log(`Removed reaction role: user=${reactor.id} direction=${roleResult.direction}`);
+      } else {
+        console.log(`Reaction role not removed: user=${reactor.id} reason=${roleResult.reason}`);
+      }
+    }
+  } catch (error) {
+    console.error('Failed to process reaction role removal:', error);
   }
 });
 
