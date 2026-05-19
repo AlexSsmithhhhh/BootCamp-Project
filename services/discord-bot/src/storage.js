@@ -218,8 +218,9 @@ export class LeaderboardStorage {
     }
   }
 
-  leaderboard(limit = 10) {
+  leaderboard(limit = 10, { excludedUserIds = new Set() } = {}) {
     return Object.values(this.state.users)
+      .filter((user) => !excludedUserIds.has(user.id))
       .sort((left, right) => {
         if (right.totalPoints !== left.totalPoints) {
           return right.totalPoints - left.totalPoints;
@@ -231,8 +232,13 @@ export class LeaderboardStorage {
       .slice(0, limit);
   }
 
-  rankOf(userId) {
-    const rows = Object.values(this.state.users).sort((left, right) => right.totalPoints - left.totalPoints);
+  rankOf(userId, { excludedUserIds = new Set() } = {}) {
+    if (excludedUserIds.has(userId)) {
+      return null;
+    }
+    const rows = Object.values(this.state.users)
+      .filter((user) => !excludedUserIds.has(user.id))
+      .sort((left, right) => right.totalPoints - left.totalPoints);
     const index = rows.findIndex((user) => user.id === userId);
     return index === -1 ? null : index + 1;
   }

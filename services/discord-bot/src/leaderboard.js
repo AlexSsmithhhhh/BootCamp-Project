@@ -7,8 +7,12 @@ import {
 const POSITIVE_REACTIONS = new Set(['✅', '🔥']);
 const DEFAULT_IGNORED_CHANNEL_NAME = /(?:rules|announc|welcome|start|faq|guide|leaderboard|лидер|анонс|правил)/i;
 
-export function createLeaderboardEmbed(storage, config, { personalUserId = null } = {}) {
-  const rows = storage.leaderboard(10);
+export function createLeaderboardEmbed(
+  storage,
+  config,
+  { personalUserId = null, excludedUserIds = new Set() } = {},
+) {
+  const rows = storage.leaderboard(10, { excludedUserIds });
   const ranking = rows.length > 0
     ? rows
       .map((user, index) => `${index + 1}. <@${user.id}> — **${user.totalPoints} баллов**`)
@@ -46,7 +50,7 @@ export function createLeaderboardEmbed(storage, config, { personalUserId = null 
 
   if (personalUserId) {
     const user = storage.state.users[personalUserId];
-    const rank = storage.rankOf(personalUserId);
+    const rank = storage.rankOf(personalUserId, { excludedUserIds });
     embed.addFields({
       name: 'Ваш результат',
       value: user
@@ -58,9 +62,9 @@ export function createLeaderboardEmbed(storage, config, { personalUserId = null 
   return embed;
 }
 
-export function createPersonalEmbed(storage, config, userId) {
+export function createPersonalEmbed(storage, config, userId, { excludedUserIds = new Set() } = {}) {
   const user = storage.state.users[userId];
-  const rank = storage.rankOf(userId);
+  const rank = storage.rankOf(userId, { excludedUserIds });
   const today = user ? storage.daily(user) : null;
 
   return new EmbedBuilder()
@@ -107,10 +111,28 @@ export function isMentorOrSupport(member, config) {
   if (member.permissions?.has(PermissionFlagsBits.Administrator)) {
     return true;
   }
+  return hasMentorRole(member, config);
+}
+
+export function hasMentorRole(member, config) {
+  if (!member) {
+    return false;
+  }
   return member.roles.cache.some((role) => {
     const roleName = role.name.toLowerCase();
     return config.mentorRoleNames.some((name) => roleName.includes(name));
   });
+}
+
+export async function excludedLeaderboardUserIds(guild, storage, config) {
+  const excluded = new Set();
+  for (const userId of Object.keys(storage.state.users)) {
+    const member = await guild.members.fetch(userId).catch(() => null);
+    if (hasMentorRole(member, config)) {
+      excluded.add(userId);
+    }
+  }
+  return excluded;
 }
 
 export function isWorkingChannel(channel, config) {
@@ -193,7 +215,9 @@ export async function updateDashboard(client, storage, config, { forceChannelId 
     return { updated: false, reason: 'channel_not_text' };
   }
 
-  const embed = createLeaderboardEmbed(storage, config);
+  const guild = channel.guild ?? await client.guilds.fetch(config.guildId);
+  const excludedUserIds = await excludedLeaderboardUserIds(guild, storage, config);
+  const embed = createLeaderboardEmbed(storage, config, { excludedUserIds });
   let message = null;
 
   if (fixedMessageId) {

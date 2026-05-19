@@ -16,6 +16,7 @@ import { config } from './config.js';
 import {
   createLeaderboardEmbed,
   createPersonalEmbed,
+  excludedLeaderboardUserIds,
   isMentorOrSupport,
   isPositiveReaction,
   isStageChannel,
@@ -249,16 +250,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
 
     if (interaction.commandName === 'leaderboard') {
+      const excludedUserIds = await excludedLeaderboardUserIds(interaction.guild, storage, config);
       await interaction.reply({
-        embeds: [createLeaderboardEmbed(storage, config)],
+        embeds: [createLeaderboardEmbed(storage, config, { excludedUserIds })],
         flags: MessageFlags.Ephemeral,
       });
       return;
     }
 
     if (interaction.commandName === 'my-points') {
+      const excludedUserIds = await excludedLeaderboardUserIds(interaction.guild, storage, config);
       await interaction.reply({
-        embeds: [createPersonalEmbed(storage, config, interaction.user.id)],
+        embeds: [createPersonalEmbed(storage, config, interaction.user.id, { excludedUserIds })],
         flags: MessageFlags.Ephemeral,
       });
       return;

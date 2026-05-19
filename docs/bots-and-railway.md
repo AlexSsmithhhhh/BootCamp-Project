@@ -118,6 +118,7 @@ railway.cmd up ".\services\discord-bot" --path-as-root --service "bootcamp-disco
 - считает +10 за ✅ или 🔥 от Mentor/Support, до 50 баллов в день;
 - считает +25 за stage от 15 минут, один раз в день;
 - дает Mentor/Support вручную начислять баллы через `/award-points`;
+- скрывает пользователей с mentor/support-ролью из публичного leaderboard;
 - хранит данные в `/app/data/discord-leaderboard.json` на Railway volume;
 - обновляет dashboard в канале `leaderboard` каждые 5 минут.
 
