@@ -74,7 +74,7 @@ export function createPersonalEmbed(storage, config, userId, { excludedUserIds =
         name: 'Сегодня',
         value: user
           ? [
-            `Сообщения: ${today.messagePoints}/${config.scores.messageDailyCap}`,
+            `Сообщения: ${formatTodayProgress(today.messagePoints, config.scores.messageDailyCap)}`,
             `Mentor/Support реакции: ${today.reactionPoints}/${config.scores.mentorReactionDailyCap}`,
             `Stage: ${today.stageAwarded ? 'зачтён' : 'ещё нет'}`,
           ].join('\n')
@@ -296,4 +296,11 @@ function formatPoints(points) {
     return `${points} балла`;
   }
   return `${points} баллов`;
+}
+
+function formatTodayProgress(value, cap) {
+  if (!Number.isFinite(cap)) {
+    return `${value}`;
+  }
+  return `${value}/${cap}`;
 }

@@ -30,6 +30,21 @@ function optionalNumber(name, fallback) {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
+function optionalCap(name, fallback) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === null || raw.trim() === '') {
+    return fallback;
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+  if (value <= 0) {
+    return null;
+  }
+  return value;
+}
+
 function optionalBoolean(name, fallback) {
   const value = process.env[name]?.trim().toLowerCase();
   if (!value) {
@@ -113,7 +128,7 @@ export const config = {
   },
   scores: {
     message: 2,
-    messageDailyCap: 30,
+    messageDailyCap: optionalCap('LEADERBOARD_MESSAGE_DAILY_CAP', null),
     mentorReaction: 10,
     mentorReactionDailyCap: 50,
     stage: 25,

@@ -89,7 +89,11 @@ export class LeaderboardStorage {
     const user = this.user(userLike);
     const eventDate = dateFromMeta(meta);
     const daily = this.daily(user, this.todayKey(eventDate));
-    const award = Math.min(scores.message, Math.max(0, scores.messageDailyCap - daily.messagePoints));
+    const hasDailyCap = Number.isFinite(scores.messageDailyCap);
+    const remaining = hasDailyCap
+      ? Math.max(0, scores.messageDailyCap - daily.messagePoints)
+      : scores.message;
+    const award = Math.min(scores.message, remaining);
     if (award <= 0) {
       return { awarded: 0, capped: true };
     }
@@ -205,6 +209,62 @@ export class LeaderboardStorage {
     await this.save();
   }
 
+  async recordMemberJoin(userLike, meta = {}) {
+    const entry = {
+      userId: userLike.id,
+      username: userLike.username || null,
+      displayName: userLike.displayName || userLike.globalName || userLike.username || null,
+      createdAt: meta.createdAt || new Date().toISOString(),
+      source: meta.source || 'guild_member_add',
+    };
+    this.state.memberJoins.push(entry);
+    if (this.state.memberJoins.length > 10000) {
+      this.state.memberJoins = this.state.memberJoins.slice(-10000);
+    }
+    await this.save();
+    return entry;
+  }
+
+  memberJoinStats(days = 1, now = new Date()) {
+    const normalizedDays = Number.isInteger(days) && days > 0 ? days : 1;
+    const byDay = new Map();
+    const dayKeys = [];
+    const includedKeys = new Set();
+    for (let offset = normalizedDays - 1; offset >= 0; offset -= 1) {
+      const date = new Date(now.getTime() - offset * 24 * 60 * 60 * 1000);
+      const key = this.todayKey(date);
+      dayKeys.push(key);
+      includedKeys.add(key);
+      byDay.set(key, 0);
+    }
+
+    const uniqueUserIds = new Set();
+    let total = 0;
+    for (const event of this.state.memberJoins) {
+      const eventDate = parseStoredDate(event.createdAt);
+      if (!eventDate) {
+        continue;
+      }
+      const key = this.todayKey(eventDate);
+      if (!includedKeys.has(key)) {
+        continue;
+      }
+      total += 1;
+      uniqueUserIds.add(event.userId);
+      byDay.set(key, (byDay.get(key) || 0) + 1);
+    }
+
+    return {
+      days: normalizedDays,
+      totalJoins: total,
+      uniqueUsers: uniqueUserIds.size,
+      byDay: dayKeys.map((key) => ({
+        date: key,
+        joins: byDay.get(key) || 0,
+      })),
+    };
+  }
+
   addEvent(userId, type, points, meta, createdAt = null) {
     this.state.events.push({
       userId,
@@ -249,6 +309,7 @@ function createInitialState() {
     version: 1,
     users: {},
     events: [],
+    memberJoins: [],
     awardedMessages: {},
     awardedReactions: {},
     stageSessions: {},
@@ -266,6 +327,7 @@ function normalizeState(state) {
     ...state,
     users: state.users || {},
     events: state.events || [],
+    memberJoins: state.memberJoins || [],
     awardedMessages: {
       ...buildAwardedMessagesFromEvents(state.events || []),
       ...(state.awardedMessages || {}),
@@ -295,6 +357,14 @@ function dateFromMeta(meta) {
   }
   const date = new Date(meta.createdAt);
   return Number.isNaN(date.getTime()) ? new Date() : date;
+}
+
+function parseStoredDate(rawDate) {
+  if (!rawDate) {
+    return null;
+  }
+  const parsed = new Date(rawDate);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 function buildAwardedMessagesFromEvents(events) {
