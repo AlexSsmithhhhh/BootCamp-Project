@@ -377,15 +377,24 @@ class EventStorage:
                 db,
                 """
                 SELECT 1
-                FROM users
-                WHERE telegram_id = ?
-                  AND (
-                    contact_received_at IS NOT NULL
-                    OR phone_number IS NOT NULL
-                    OR discord_invite_sent_at IS NOT NULL
-                  )
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM users
+                    WHERE telegram_id = ?
+                      AND (
+                        contact_received_at IS NOT NULL
+                        OR phone_number IS NOT NULL
+                        OR discord_invite_sent_at IS NOT NULL
+                      )
+                )
+                OR EXISTS (
+                    SELECT 1
+                    FROM events
+                    WHERE telegram_id = ?
+                      AND event_type IN ('contact_shared', 'discord_access_sent')
+                )
                 """,
-                (telegram_id,),
+                (telegram_id, telegram_id),
             )
         return row is not None
 

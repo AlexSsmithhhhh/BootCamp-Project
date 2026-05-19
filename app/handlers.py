@@ -20,8 +20,11 @@ CONTACT_PROMPT_COOLDOWN_SECONDS = 6 * 60 * 60
 
 async def has_contact_access(storage: EventStorage, user_id: int) -> bool:
     if user_id in known_contact_user_ids:
+        logger.info("Contact access cache hit user_id=%s", user_id)
         return True
-    if await storage.user_has_contact(user_id):
+    has_contact = await storage.user_has_contact(user_id)
+    logger.info("Contact access check user_id=%s result=%s", user_id, has_contact)
+    if has_contact:
         known_contact_user_ids.add(user_id)
         return True
     return False
