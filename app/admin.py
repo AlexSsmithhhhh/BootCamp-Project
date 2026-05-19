@@ -197,6 +197,7 @@ def admin_commands(router) -> None:
 
     @router.message(Command("new_post", "newpost"))
     @router.message(TextCommand("new post"))
+    @router.message(F.text.regexp(r"^\s*/?new_?post(?:@\w+)?\s*$"))
     async def handle_new_post(message: Message, storage: EventStorage, settings: Settings) -> None:
         if not is_admin(message, settings):
             await deny_non_admin(message)
@@ -250,6 +251,7 @@ def admin_commands(router) -> None:
 
     @router.message(Command("all_post"))
     @router.message(TextCommand("all post"))
+    @router.message(F.text.regexp(r"^\s*/?all_?post(?:@\w+)?\s*$"))
     async def handle_all_post(message: Message, storage: EventStorage, settings: Settings) -> None:
         if not is_admin(message, settings):
             await deny_non_admin(message)
@@ -285,6 +287,7 @@ def admin_commands(router) -> None:
 
     @router.message(Command("analytics"))
     @router.message(TextCommand("analytics"))
+    @router.message(F.text.regexp(r"^\s*/?analytics(?:@\w+)?\s*$"))
     async def handle_analytics(message: Message, storage: EventStorage, settings: Settings) -> None:
         if not is_admin(message, settings):
             await deny_non_admin(message)
