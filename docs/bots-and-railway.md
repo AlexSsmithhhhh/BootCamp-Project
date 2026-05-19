@@ -164,7 +164,7 @@ $env:RAILWAY_TOKEN = "<project-token>"
 railway.cmd deployment redeploy --service "bootcamp-telegram-bot" --environment "production" --from-source --yes --json
 ```
 
-Примечание: у `bootcamp-telegram-bot` сейчас нет отдельного Railway volume, потому что текущий project token не дает создавать/прикреплять volumes. Бот работает, но SQLite-файл внутри контейнера не является долговечным между redeploy. Нужно добавить volume `/app/data` через Railway dashboard или account-level token.
+Примечание: у `bootcamp-telegram-bot` подключен Railway volume `bootcamp-telegram-bot-volume` на `/app/data`, а `DATABASE_PATH` зафиксирован в `/app/data/bot.sqlite3`. Контакты и аналитика сохраняются между redeploy.
 
 ## Discord-бот
 
