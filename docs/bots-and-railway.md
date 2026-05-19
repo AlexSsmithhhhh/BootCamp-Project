@@ -22,6 +22,45 @@ Environment: `production`
 - `bootcamp-telegram-bot` - отдельный сервис для Telegram-бота.
 - `bootcamp-discord-bot` - отдельный сервис для Discord-бота.
 
+## Git-first deploy workflow
+
+GitHub is the source of truth for production deploys. Do not deploy regular changes with local `railway up`.
+
+Normal flow:
+
+1. Make code/docs changes locally.
+2. Run checks:
+
+   ```powershell
+   .\.venv\Scripts\python.exe -m unittest discover -s tests
+   cd services\discord-bot
+   npm run check
+   ```
+
+3. Commit and push:
+
+   ```powershell
+   git status --short --branch
+   git add -- <changed-files>
+   git commit -m "<clear message>"
+   git push origin main
+   ```
+
+4. Deploy from the configured GitHub source in Railway:
+
+   ```powershell
+   $env:RAILWAY_TOKEN = "<project-token>"
+   railway.cmd deployment redeploy --service "bootcamp-telegram-bot" --environment "production" --from-source --yes --json
+   railway.cmd deployment redeploy --service "bootcamp-discord-bot" --environment "production" --from-source --yes --json
+   ```
+
+Railway service source settings should stay connected to `AlexSsmithhhhh/BootCamp-Project`:
+
+- `bootcamp-telegram-bot`: root directory `/`, start command `python -m app.main`.
+- `bootcamp-discord-bot`: root directory `services/discord-bot`, start command `npm start`.
+
+Use local `railway up` only as an emergency fallback, and document why it was needed.
+
 Проверка статуса:
 
 ```powershell
@@ -64,9 +103,11 @@ railway.cmd logs --service "bootcamp-discord-bot" --environment "production" --l
 
 Деплой:
 
+Основной способ - push в GitHub и redeploy from source в Railway:
+
 ```powershell
 $env:RAILWAY_TOKEN = "<project-token>"
-railway.cmd up --service "bootcamp-telegram-bot" --environment "production" --detach --json --message "Deploy Telegram bot"
+railway.cmd deployment redeploy --service "bootcamp-telegram-bot" --environment "production" --from-source --yes --json
 ```
 
 Примечание: у `bootcamp-telegram-bot` сейчас нет отдельного Railway volume, потому что текущий project token не дает создавать/прикреплять volumes. Бот работает, но SQLite-файл внутри контейнера не является долговечным между redeploy. Нужно добавить volume `/app/data` через Railway dashboard или account-level token.
@@ -103,9 +144,11 @@ npm run check
 
 Деплой:
 
+Основной способ - push в GitHub и redeploy from source в Railway:
+
 ```powershell
 $env:RAILWAY_TOKEN = "<project-token>"
-railway.cmd up ".\services\discord-bot" --path-as-root --service "bootcamp-discord-bot" --environment "production" --detach --json --message "Deploy Discord bot"
+railway.cmd deployment redeploy --service "bootcamp-discord-bot" --environment "production" --from-source --yes --json
 ```
 
 ## Что восстановлено по Discord
@@ -159,8 +202,13 @@ railway.cmd up ".\services\discord-bot" --path-as-root --service "bootcamp-disco
    npm run check
    ```
 
-3. Деплоить Telegram только в `bootcamp-telegram-bot`.
+3. Сделать commit и push в `main`.
 
-4. Деплоить Discord только в `bootcamp-discord-bot` и только с `--path-as-root`.
+4. Деплоить Railway только from GitHub source:
+
+   ```powershell
+   railway.cmd deployment redeploy --service "bootcamp-telegram-bot" --environment "production" --from-source --yes --json
+   railway.cmd deployment redeploy --service "bootcamp-discord-bot" --environment "production" --from-source --yes --json
+   ```
 
 5. После деплоя смотреть `railway.cmd logs --latest --lines 100`.
