@@ -12,7 +12,7 @@ export function createLeaderboardEmbed(
   config,
   { personalUserId = null, excludedUserIds = new Set() } = {},
 ) {
-  const rows = storage.leaderboard(10, { excludedUserIds });
+  const rows = storage.leaderboard(config.publicLeaderboardLimit, { excludedUserIds });
   const ranking = rows.length > 0
     ? rows
       .map((user, index) => `**${index + 1}.** <@${user.id}>  ·  **${formatPoints(user.totalPoints)}**`)
@@ -24,7 +24,7 @@ export function createLeaderboardEmbed(
     .setColor(0x2f9df4)
     .setDescription(ranking)
     .setFooter({
-      text: `Обновляется каждые ${Math.round(config.updateEveryMs / 60000)} минут · ${formatDateTime(new Date(), config.timeZone)}`,
+      text: `Топ ${config.publicLeaderboardLimit} · Свои баллы: /my-points · ${formatDateTime(new Date(), config.timeZone)}`,
     });
 
   if (personalUserId) {

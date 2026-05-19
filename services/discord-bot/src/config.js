@@ -74,6 +74,7 @@ export const config = {
     .map((item) => item.trim().toLowerCase())
     .filter(Boolean),
   updateEveryMs: optionalNumber('LEADERBOARD_UPDATE_EVERY_MS', 5 * 60 * 1000),
+  publicLeaderboardLimit: optionalNumber('LEADERBOARD_PUBLIC_LIMIT', 5),
   backfillOnStartup: optionalBoolean('LEADERBOARD_BACKFILL_ON_STARTUP', true),
   backfillDays: optionalNumber('LEADERBOARD_BACKFILL_DAYS', 14),
   backfillMaxMessagesPerChannel: optionalNumber('LEADERBOARD_BACKFILL_MAX_MESSAGES_PER_CHANNEL', 1000),

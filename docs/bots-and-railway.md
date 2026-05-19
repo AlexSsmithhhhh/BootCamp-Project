@@ -120,13 +120,14 @@ railway.cmd up ".\services\discord-bot" --path-as-root --service "bootcamp-disco
 - дает Mentor/Support вручную начислять баллы через `/award-points`;
 - скрывает пользователей с mentor/support-ролью из публичного leaderboard;
 - хранит данные в `/app/data/discord-leaderboard.json` на Railway volume;
-- обновляет компактный dashboard в канале `leaderboard` каждые 5 минут: только рейтинг и время обновления, без правил начисления и наград.
+- обновляет компактный dashboard в канале `leaderboard` каждые 5 минут: топ-5, время обновления и подсказка `/my-points`, без правил начисления и наград.
 
 Текущая Railway-настройка:
 
 - `LEADERBOARD_CHANNEL_ID` = канал `leaderboard`.
 - `LEADERBOARD_MESSAGE_ID` = fixed Discord message id for the public dashboard. When this is set, the bot edits only that message and does not auto-create another dashboard if the message cannot be fetched or edited.
 - `LEADERBOARD_WORKING_CHANNEL_IDS` = `fx-chat`, `crypto-chat`.
+- `LEADERBOARD_PUBLIC_LIMIT` = `5` by default.
 - `LEADERBOARD_BACKFILL_ON_STARTUP` = `true` by default; restores recent message/reaction history from working channels after deploy without double-counting already awarded messages.
 - `LEADERBOARD_BACKFILL_DAYS` = `14` by default.
 - `LEADERBOARD_BACKFILL_MAX_MESSAGES_PER_CHANNEL` = `1000` by default.

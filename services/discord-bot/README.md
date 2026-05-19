@@ -17,13 +17,14 @@
 - +25 баллов за участие в stage от 15 минут, один раз в день.
 - Роль `Mentor`, `ментор`, `Support`, `саппорт` или `наставник` может вручную начислять баллы командой `/award-points`.
 - Пользователи с mentor/support-ролью не отображаются в публичном leaderboard.
-- Публичный dashboard показывает только компактный рейтинг и время обновления; правила и награды остаются в отдельном закрепленном сообщении.
+- Публичный dashboard показывает топ-5, время обновления и подсказку `/my-points` для личных баллов; правила и награды остаются в отдельном закрепленном сообщении.
 
 Рабочие Railway-переменные:
 
 - `LEADERBOARD_CHANNEL_ID` - канал dashboard. Сейчас это `leaderboard`.
 - `LEADERBOARD_MESSAGE_ID` - fixed dashboard message. If it is set, the bot edits only this message and never creates a replacement automatically.
 - `LEADERBOARD_WORKING_CHANNEL_IDS` - рабочие чаты. Сейчас это `fx-chat` и `crypto-chat`.
+- `LEADERBOARD_PUBLIC_LIMIT` - сколько участников показывать в публичном dashboard, по умолчанию `5`.
 - `LEADERBOARD_BACKFILL_ON_STARTUP` - включить восстановление истории рабочих каналов при старте, по умолчанию `true`.
 - `LEADERBOARD_BACKFILL_DAYS` - сколько дней истории читать при восстановлении, по умолчанию `14`.
 - `LEADERBOARD_BACKFILL_MAX_MESSAGES_PER_CHANNEL` - лимит сообщений на канал для восстановления, по умолчанию `1000`.
