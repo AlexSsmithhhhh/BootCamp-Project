@@ -106,9 +106,11 @@ Admin-команды Telegram:
 - `/admin_help` - список команд.
 - `/post текст` - сразу опубликовать пост в `TELEGRAM_CHANNEL_ID`.
 - `/post` ответом на фото/альбом/видео/PDF - опубликовать это медиа в `TELEGRAM_CHANNEL_ID`.
+- Фото/видео/PDF с caption `/post текст` - сразу опубликовать медиа с подписью, без отдельной команды.
 - `/delete_post message_id` - удалить пост из канала.
 - `/broadcast текст` - сразу отправить рассылку всем активным пользователям.
 - `/broadcast` ответом на фото/альбом/видео/PDF - отправить медиа всем активным пользователям.
+- Фото/видео/PDF с caption `/broadcast текст` - сразу отправить медиа-рассылку.
 - `/schedule_post YYYY-MM-DD HH:MM | текст` - запланировать пост в канал.
 - `/schedule_post YYYY-MM-DD HH:MM` ответом на медиа - запланировать медиа-пост.
 - `/schedule_broadcast YYYY-MM-DD HH:MM | текст` - запланировать рассылку.
@@ -121,7 +123,8 @@ Media workflow:
 1. Админ отправляет боту в личку фото, Telegram-альбом из нескольких фото, небольшое видео или PDF/document.
 2. Админ отвечает на это сообщение командой `/post`, `/broadcast`, `/schedule_post YYYY-MM-DD HH:MM` или `/schedule_broadcast YYYY-MM-DD HH:MM`.
 3. Текст после команды становится caption. Для отложенных медиа caption пишется после `|`, например `/schedule_post 2026-05-20 14:00 | Caption`.
-4. Альбомы кешируются в SQLite table `admin_media_cache`, а готовый payload для отложенной отправки хранится в `scheduled_jobs.payload`.
+4. Быстрый вариант для немедленной отправки: caption самого медиа начинается с `/post текст` или `/broadcast текст`.
+5. Альбомы кешируются в SQLite table `admin_media_cache`, а готовый payload для отложенной отправки хранится в `scheduled_jobs.payload`.
 
 Время в командах планирования вводится в timezone `Europe/Kiev`. Задания хранятся в SQLite table `scheduled_jobs` и выполняются фоновым worker внутри Telegram-сервиса.
 

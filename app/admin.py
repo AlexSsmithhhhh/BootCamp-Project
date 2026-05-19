@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime, timedelta, timezone, tzinfo
 from html import escape
@@ -33,7 +34,12 @@ async def deny_non_admin(message: Message) -> None:
 
 def admin_commands(router) -> None:
     @router.message(AdminOnly(), F.photo | F.video | F.document)
-    async def handle_admin_media_upload(message: Message, storage: EventStorage) -> None:
+    async def handle_admin_media_upload(
+        message: Message,
+        bot: Bot,
+        storage: EventStorage,
+        settings: Settings,
+    ) -> None:
         if message.from_user is None:
             return
         media = media_from_message(message)
@@ -49,6 +55,39 @@ def admin_commands(router) -> None:
             caption=message.caption,
         )
         await storage.prune_admin_media_cache()
+
+        caption_command = parse_media_caption_command(message.caption)
+        if caption_command is not None:
+            action, caption = caption_command
+            if message.media_group_id and media["kind"] == "photo":
+                asyncio.create_task(
+                    execute_media_group_caption_action(
+                        message=message,
+                        bot=bot,
+                        storage=storage,
+                        settings=settings,
+                        action=action,
+                        caption=caption,
+                        admin_id=message.from_user.id,
+                        media_group_id=message.media_group_id,
+                    )
+                )
+                return
+
+            await execute_direct_media_action(
+                message=message,
+                bot=bot,
+                storage=storage,
+                settings=settings,
+                action=action,
+                payload={
+                    "kind": media["kind"],
+                    "file_id": media["file_id"],
+                    "caption": caption,
+                },
+            )
+            return
+
         if message.media_group_id is None:
             await message.answer(
                 "Медиа сохранено. Ответь на это сообщение командой /post, "
@@ -67,9 +106,11 @@ def admin_commands(router) -> None:
                     "<b>Admin-команды</b>",
                     "/post текст - сразу опубликовать текст в канал",
                     "/post - ответом на фото/альбом/видео/PDF публикует это медиа",
+                    "Фото/видео/PDF с caption `/post текст` публикуется сразу",
                     "/delete_post message_id - удалить пост из канала",
                     "/broadcast текст - отправить рассылку всем активным пользователям",
                     "/broadcast - ответом на медиа отправляет медиа-рассылку",
+                    "Фото/видео/PDF с caption `/broadcast текст` сразу запускает рассылку",
                     "/schedule_post YYYY-MM-DD HH:MM | текст - запланировать пост",
                     "/schedule_post YYYY-MM-DD HH:MM - ответом на медиа планирует медиа-пост",
                     "/schedule_broadcast YYYY-MM-DD HH:MM | текст - запланировать рассылку",
@@ -314,6 +355,108 @@ async def execute_due_job(bot: Bot, storage: EventStorage, job: dict) -> None:
         await storage.mark_job_failed(job_id, str(exc))
 
 
+async def execute_media_group_caption_action(
+    *,
+    message: Message,
+    bot: Bot,
+    storage: EventStorage,
+    settings: Settings,
+    action: str,
+    caption: Optional[str],
+    admin_id: int,
+    media_group_id: str,
+) -> None:
+    await asyncio.sleep(2)
+    cached_items = await storage.admin_media_group(
+        admin_id=admin_id,
+        media_group_id=media_group_id,
+    )
+    photo_items = [
+        item
+        for item in sorted(cached_items, key=lambda item: int(item["message_id"]))
+        if item["media_type"] == "photo"
+    ]
+    if not photo_items:
+        await message.answer("Не удалось собрать альбом для отправки.")
+        return
+    if len(photo_items) == 1:
+        payload: Payload = {
+            "kind": "photo",
+            "file_id": photo_items[0]["file_id"],
+            "caption": caption,
+        }
+    else:
+        payload = {
+            "kind": "media_group",
+            "items": [
+                {
+                    "type": "photo",
+                    "file_id": item["file_id"],
+                    "caption": caption if index == 0 else None,
+                }
+                for index, item in enumerate(photo_items)
+            ],
+        }
+    await execute_direct_media_action(
+        message=message,
+        bot=bot,
+        storage=storage,
+        settings=settings,
+        action=action,
+        payload=payload,
+    )
+
+
+async def execute_direct_media_action(
+    *,
+    message: Message,
+    bot: Bot,
+    storage: EventStorage,
+    settings: Settings,
+    action: str,
+    payload: Payload,
+) -> None:
+    if message.from_user is None:
+        return
+    if action == "post":
+        channel_id = require_channel_id(settings)
+        if channel_id is None:
+            await message.answer("Не задан TELEGRAM_CHANNEL_ID.")
+            return
+        sent_messages = await send_payload_to_chat(bot, channel_id, payload)
+        first_message_id = sent_messages[0].message_id if sent_messages else None
+        await storage.add_event(
+            message.from_user.id,
+            "admin_channel_post_sent",
+            {
+                "message_id": first_message_id,
+                "payload_kind": payload["kind"],
+                "direct_caption_command": True,
+            },
+        )
+        await message.answer(
+            "Пост опубликован. "
+            f"Message ID: <code>{first_message_id}</code>"
+        )
+        return
+
+    if action == "broadcast":
+        result = await send_broadcast(bot, storage, payload)
+        await storage.add_event(
+            message.from_user.id,
+            "admin_broadcast_sent",
+            {
+                "payload_kind": payload["kind"],
+                "direct_caption_command": True,
+                **result,
+            },
+        )
+        await message.answer(format_broadcast_result(result))
+        return
+
+    await message.answer("Для caption поддерживаются команды /post и /broadcast.")
+
+
 async def build_message_payload(
     message: Message,
     storage: EventStorage,
@@ -528,6 +671,19 @@ def parse_int(value: Optional[str]) -> Optional[int]:
         return int(value.strip())
     except ValueError:
         return None
+
+
+def parse_media_caption_command(value: Optional[str]) -> Optional[tuple[str, Optional[str]]]:
+    if not value:
+        return None
+    parts = value.strip().split(maxsplit=1)
+    if not parts or not parts[0].startswith("/"):
+        return None
+    command = parts[0][1:].split("@", 1)[0].lower()
+    if command not in {"post", "broadcast"}:
+        return None
+    text = parse_required_text(parts[1] if len(parts) > 1 else None)
+    return command, text
 
 
 def parse_scheduled_command(value: Optional[str]) -> Optional[tuple[datetime, Optional[str]]]:
