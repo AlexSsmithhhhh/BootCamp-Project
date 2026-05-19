@@ -1,6 +1,7 @@
-import sqlite3
 import unittest
+from contextlib import closing
 from pathlib import Path
+from sqlite3 import connect
 from tempfile import TemporaryDirectory
 
 from aiogram.types import Contact, User
@@ -27,7 +28,7 @@ class EventStorageTests(unittest.IsolatedAsyncioTestCase):
             await storage.save_contact(user, contact)
             await storage.add_event(user.id, "discord_access_sent")
 
-            with sqlite3.connect(database_path) as db:
+            with closing(connect(database_path)) as db:
                 start_count, phone_number = db.execute(
                     "SELECT start_count, phone_number FROM users WHERE telegram_id = ?",
                     (user.id,),
