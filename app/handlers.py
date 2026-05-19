@@ -1,5 +1,5 @@
 from aiogram import F, Router
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import Message, ReplyKeyboardRemove
 
 from app import content
@@ -12,15 +12,21 @@ router = Router()
 
 
 @router.message(CommandStart())
-async def handle_start(message: Message, storage: EventStorage) -> None:
+async def handle_start(
+    message: Message,
+    command: CommandObject,
+    storage: EventStorage,
+) -> None:
     if message.from_user is not None:
-        await storage.record_start(message.from_user)
+        await storage.record_start(message.from_user, command.args)
 
     await message.answer(content.START_MESSAGE, reply_markup=contact_keyboard())
 
 
 @router.message(Command("help"))
-async def handle_help(message: Message) -> None:
+async def handle_help(message: Message, storage: EventStorage) -> None:
+    if message.from_user is not None:
+        await storage.record_message_interaction(message.from_user, "help_requested")
     await message.answer(content.HELP_MESSAGE)
 
 
@@ -40,7 +46,7 @@ async def handle_contact(
         return
 
     await storage.save_contact(message.from_user, message.contact)
-    await storage.add_event(message.from_user.id, "discord_access_sent")
+    await storage.mark_discord_access_sent(message.from_user)
     await message.answer(
         content.CONTACT_RECEIVED_MESSAGE,
         reply_markup=ReplyKeyboardRemove(),
@@ -52,5 +58,15 @@ async def handle_contact(
 
 
 @router.message()
-async def handle_fallback(message: Message) -> None:
+async def handle_fallback(message: Message, storage: EventStorage) -> None:
+    if message.from_user is not None:
+        await storage.record_message_interaction(
+            message.from_user,
+            "fallback_message",
+            {
+                "content_type": str(message.content_type),
+                "has_text": bool(message.text),
+                "text_length": len(message.text or ""),
+            },
+        )
     await message.answer(content.CONTACT_REQUIRED_MESSAGE, reply_markup=contact_keyboard())

@@ -48,6 +48,8 @@ railway.cmd logs --service "bootcamp-discord-bot" --environment "production" --l
 - `app/storage.py` - SQLite-учет событий.
 - `app/content.py` - тексты и placeholder-контент.
 
+Подробная архитектура аналитики Telegram-бота лежит в `docs/telegram-analytics-architecture.md`.
+
 Обязательные переменные:
 
 - `TELEGRAM_BOT_TOKEN`

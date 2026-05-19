@@ -4,6 +4,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import parse_qs
 
 import aiosqlite
 from aiogram.types import Contact, User
@@ -54,10 +55,36 @@ class EventStorage:
                 """
             )
             await self._ensure_user_contact_columns(db)
+            await self._ensure_user_analytics_columns(db)
+            await db.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_events_event_type_created_at
+                ON events (event_type, created_at)
+                """
+            )
+            await db.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_events_created_at
+                ON events (created_at)
+                """
+            )
+            await db.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_users_subscription_status
+                ON users (subscription_status)
+                """
+            )
+            await db.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_users_source
+                ON users (source)
+                """
+            )
             await db.commit()
 
-    async def record_start(self, user: User) -> bool:
+    async def record_start(self, user: User, start_payload: Optional[str] = None) -> bool:
         now = _utc_now()
+        source = _source_from_payload(start_payload)
         async with aiosqlite.connect(self.database_path) as db:
             row = await _fetch_one(
                 db,
@@ -69,11 +96,12 @@ class EventStorage:
                     """
                     INSERT INTO users (
                         telegram_id, username, first_name, last_name, language_code,
-                        first_seen_at, last_seen_at, start_count
+                        first_seen_at, last_seen_at, start_count, subscription_status,
+                        subscribed_at, last_interaction_at, start_payload, source
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'active', ?, ?, ?, ?)
                     """,
-                    (*_user_values(user), now, now),
+                    (*_user_values(user), now, now, now, now, start_payload, source),
                 )
                 is_new_user = True
             else:
@@ -85,6 +113,12 @@ class EventStorage:
                         last_name = ?,
                         language_code = ?,
                         last_seen_at = ?,
+                        last_interaction_at = ?,
+                        subscription_status = 'active',
+                        unsubscribed_at = NULL,
+                        subscribed_at = COALESCE(subscribed_at, ?),
+                        start_payload = COALESCE(?, start_payload),
+                        source = COALESCE(?, source),
                         start_count = start_count + 1
                     WHERE telegram_id = ?
                     """,
@@ -94,6 +128,10 @@ class EventStorage:
                         user.last_name,
                         user.language_code,
                         now,
+                        now,
+                        now,
+                        start_payload,
+                        source,
                         user.id,
                     ),
                 )
@@ -101,7 +139,14 @@ class EventStorage:
 
             await db.commit()
 
-        await self.add_event(user.id, "start" if is_new_user else "start_repeat")
+        await self.add_event(
+            user.id,
+            "start" if is_new_user else "start_repeat",
+            {
+                "start_payload": start_payload,
+                "source": source,
+            },
+        )
         return is_new_user
 
     async def ensure_user(self, user: User) -> None:
@@ -131,7 +176,8 @@ class EventStorage:
                         first_name = ?,
                         last_name = ?,
                         language_code = ?,
-                        last_seen_at = ?
+                        last_seen_at = ?,
+                        last_interaction_at = ?
                     WHERE telegram_id = ?
                     """,
                     (
@@ -139,6 +185,7 @@ class EventStorage:
                         user.first_name,
                         user.last_name,
                         user.language_code,
+                        now,
                         now,
                         user.id,
                     ),
@@ -176,13 +223,15 @@ class EventStorage:
                     contact_first_name = ?,
                     contact_last_name = ?,
                     contact_received_at = ?,
-                    last_seen_at = ?
+                    last_seen_at = ?,
+                    last_interaction_at = ?
                 WHERE telegram_id = ?
                 """,
                 (
                     contact.phone_number,
                     contact.first_name,
                     contact.last_name,
+                    now,
                     now,
                     now,
                     user.id,
@@ -199,6 +248,80 @@ class EventStorage:
             },
         )
 
+    async def record_message_interaction(
+        self,
+        user: User,
+        event_type: str,
+        payload: Optional[dict[str, Any]] = None,
+    ) -> None:
+        await self.ensure_user(user)
+        await self.add_event(user.id, event_type, payload)
+
+    async def mark_discord_access_sent(self, user: User) -> None:
+        await self.ensure_user(user)
+        now = _utc_now()
+        async with aiosqlite.connect(self.database_path) as db:
+            await db.execute(
+                """
+                UPDATE users
+                SET discord_invite_sent_at = COALESCE(discord_invite_sent_at, ?),
+                    last_interaction_at = ?
+                WHERE telegram_id = ?
+                """,
+                (now, now, user.id),
+            )
+            await db.commit()
+
+        await self.add_event(user.id, "discord_access_sent")
+
+    async def mark_delivery_failed(self, telegram_id: int, error: str) -> None:
+        now = _utc_now()
+        async with aiosqlite.connect(self.database_path) as db:
+            await db.execute(
+                """
+                UPDATE users
+                SET subscription_status = 'blocked',
+                    unsubscribed_at = COALESCE(unsubscribed_at, ?),
+                    last_delivery_error = ?,
+                    last_delivery_error_at = ?
+                WHERE telegram_id = ?
+                """,
+                (now, error[:500], now, telegram_id),
+            )
+            await db.commit()
+
+        await self.add_event(
+            telegram_id,
+            "delivery_failed",
+            {
+                "error": error[:500],
+            },
+        )
+
+    async def analytics_overview(self) -> dict[str, int]:
+        async with aiosqlite.connect(self.database_path) as db:
+            totals = {
+                "users_total": await _fetch_count(db, "SELECT COUNT(*) FROM users"),
+                "users_active": await _fetch_count(
+                    db,
+                    "SELECT COUNT(*) FROM users WHERE subscription_status = 'active'",
+                ),
+                "users_blocked": await _fetch_count(
+                    db,
+                    "SELECT COUNT(*) FROM users WHERE subscription_status = 'blocked'",
+                ),
+                "contacts_shared": await _fetch_count(
+                    db,
+                    "SELECT COUNT(*) FROM users WHERE contact_received_at IS NOT NULL",
+                ),
+                "discord_invites_sent": await _fetch_count(
+                    db,
+                    "SELECT COUNT(*) FROM users WHERE discord_invite_sent_at IS NOT NULL",
+                ),
+                "events_total": await _fetch_count(db, "SELECT COUNT(*) FROM events"),
+            }
+        return totals
+
     async def _ensure_user_contact_columns(self, db: aiosqlite.Connection) -> None:
         async with db.execute("PRAGMA table_info(users)") as cursor:
             existing_columns = {row[1] for row in await cursor.fetchall()}
@@ -208,6 +331,25 @@ class EventStorage:
             "contact_first_name": "TEXT",
             "contact_last_name": "TEXT",
             "contact_received_at": "TEXT",
+        }
+        for column_name, column_type in required_columns.items():
+            if column_name not in existing_columns:
+                await db.execute(f"ALTER TABLE users ADD COLUMN {column_name} {column_type}")
+
+    async def _ensure_user_analytics_columns(self, db: aiosqlite.Connection) -> None:
+        async with db.execute("PRAGMA table_info(users)") as cursor:
+            existing_columns = {row[1] for row in await cursor.fetchall()}
+
+        required_columns = {
+            "subscription_status": "TEXT NOT NULL DEFAULT 'active'",
+            "subscribed_at": "TEXT",
+            "unsubscribed_at": "TEXT",
+            "last_interaction_at": "TEXT",
+            "start_payload": "TEXT",
+            "source": "TEXT",
+            "discord_invite_sent_at": "TEXT",
+            "last_delivery_error": "TEXT",
+            "last_delivery_error_at": "TEXT",
         }
         for column_name, column_type in required_columns.items():
             if column_name not in existing_columns:
@@ -223,6 +365,12 @@ async def _fetch_one(
         return await cursor.fetchone()
 
 
+async def _fetch_count(db: aiosqlite.Connection, query: str) -> int:
+    async with db.execute(query) as cursor:
+        row = await cursor.fetchone()
+    return int(row[0])
+
+
 def _user_values(user: User) -> tuple[int, Optional[str], str, Optional[str], Optional[str]]:
     return (
         user.id,
@@ -235,3 +383,16 @@ def _user_values(user: User) -> tuple[int, Optional[str], str, Optional[str], Op
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _source_from_payload(start_payload: Optional[str]) -> Optional[str]:
+    if not start_payload:
+        return None
+    if "=" not in start_payload:
+        return start_payload[:100]
+    parsed = parse_qs(start_payload, keep_blank_values=False)
+    for key in ("utm_source", "source", "src", "campaign"):
+        values = parsed.get(key)
+        if values:
+            return values[0][:100]
+    return start_payload[:100]
