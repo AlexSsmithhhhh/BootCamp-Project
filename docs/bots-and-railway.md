@@ -120,7 +120,7 @@ railway.cmd up ".\services\discord-bot" --path-as-root --service "bootcamp-disco
 - дает Mentor/Support вручную начислять баллы через `/award-points`;
 - скрывает пользователей с mentor/support-ролью из публичного leaderboard;
 - хранит данные в `/app/data/discord-leaderboard.json` на Railway volume;
-- обновляет dashboard в канале `leaderboard` каждые 5 минут.
+- обновляет компактный dashboard в канале `leaderboard` каждые 5 минут: только рейтинг и время обновления, без правил начисления и наград.
 
 Текущая Railway-настройка:
 

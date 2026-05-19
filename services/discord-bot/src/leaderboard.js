@@ -15,38 +15,17 @@ export function createLeaderboardEmbed(
   const rows = storage.leaderboard(10, { excludedUserIds });
   const ranking = rows.length > 0
     ? rows
-      .map((user, index) => `${index + 1}. <@${user.id}> — **${user.totalPoints} баллов**`)
+      .map((user, index) => `**${index + 1}.** <@${user.id}>  ·  **${formatPoints(user.totalPoints)}**`)
       .join('\n')
-    : 'Пока нет начислений. Первые полезные сообщения, реакции менторов и stage дадут баллы.';
+    : 'Пока нет участников с баллами.';
 
   const embed = new EmbedBuilder()
-    .setTitle('Activity Leaderboard Dashboard')
+    .setTitle('BootCamp Leaderboard')
     .setColor(0x2f9df4)
     .setDescription(ranking)
-    .addFields(
-      {
-        name: 'Как начисляются баллы',
-        value: [
-          `+${config.scores.message} за содержательное сообщение в рабочих чатах, до ${config.scores.messageDailyCap} в день.`,
-          `+${config.scores.mentorReaction} за ✅ или 🔥 от Mentor/Support, до ${config.scores.mentorReactionDailyCap} в день.`,
-          `+${config.scores.stage} за stage от 15 минут, один раз в день.`,
-        ].join('\n'),
-      },
-      {
-        name: 'Награды',
-        value: '150 баллов — Discount 15%\n275 баллов — Discount 20%',
-        inline: false,
-      },
-      {
-        name: 'Финальный Top 3',
-        value: '1 место — бесплатный доступ к продукту BootCamp\n2 место — 3 месяца в сообществе\n3 место — 1 месяц в сообществе',
-        inline: false,
-      },
-      {
-        name: 'Обновление',
-        value: `Dashboard обновляется автоматически каждые ${Math.round(config.updateEveryMs / 60000)} минут.\nОбновлено: ${formatDateTime(new Date(), config.timeZone)}`,
-      },
-    );
+    .setFooter({
+      text: `Обновляется каждые ${Math.round(config.updateEveryMs / 60000)} минут · ${formatDateTime(new Date(), config.timeZone)}`,
+    });
 
   if (personalUserId) {
     const user = storage.state.users[personalUserId];
@@ -286,4 +265,20 @@ function formatDateTime(date, timeZone) {
     dateStyle: 'short',
     timeStyle: 'short',
   }).format(date);
+}
+
+function formatPoints(points) {
+  const absolute = Math.abs(points);
+  const lastTwo = absolute % 100;
+  const lastOne = absolute % 10;
+  if (lastTwo >= 11 && lastTwo <= 14) {
+    return `${points} баллов`;
+  }
+  if (lastOne === 1) {
+    return `${points} балл`;
+  }
+  if (lastOne >= 2 && lastOne <= 4) {
+    return `${points} балла`;
+  }
+  return `${points} баллов`;
 }

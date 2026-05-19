@@ -90,13 +90,14 @@ async function fetchMessage(targetChannelId, messageId) {
 function printMessage(message, marker) {
   const embedTitle = message.embeds?.[0]?.title ?? '';
   const updatedField = message.embeds?.[0]?.fields?.find((field) => field.name === 'Обновление')?.value ?? '';
+  const footerText = message.embeds?.[0]?.footer?.text ?? '';
   console.log([
     marker,
     message.id,
     message.author?.username,
     message.timestamp,
     embedTitle,
-    updatedField.replace(/\s+/g, ' ').slice(0, 120),
+    (updatedField || footerText).replace(/\s+/g, ' ').slice(0, 120),
     (message.content || '').slice(0, 60),
   ].join('\t'));
 }
