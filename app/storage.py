@@ -55,6 +55,7 @@ class EventStorage:
                     job_type TEXT NOT NULL,
                     status TEXT NOT NULL DEFAULT 'scheduled',
                     text TEXT NOT NULL,
+                    payload TEXT,
                     target_chat_id TEXT,
                     created_by INTEGER NOT NULL,
                     created_at TEXT NOT NULL,
@@ -68,12 +69,28 @@ class EventStorage:
             )
             await db.execute(
                 """
+                CREATE TABLE IF NOT EXISTS admin_media_cache (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    admin_id INTEGER NOT NULL,
+                    media_group_id TEXT,
+                    message_id INTEGER NOT NULL,
+                    media_type TEXT NOT NULL,
+                    file_id TEXT NOT NULL,
+                    caption TEXT,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(admin_id, message_id)
+                )
+                """
+            )
+            await db.execute(
+                """
                 CREATE INDEX IF NOT EXISTS idx_events_telegram_id_created_at
                 ON events (telegram_id, created_at)
                 """
             )
             await self._ensure_user_contact_columns(db)
             await self._ensure_user_analytics_columns(db)
+            await self._ensure_scheduled_job_columns(db)
             await db.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_events_event_type_created_at
@@ -102,6 +119,12 @@ class EventStorage:
                 """
                 CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_status_scheduled_at
                 ON scheduled_jobs (status, scheduled_at)
+                """
+            )
+            await db.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_admin_media_cache_admin_group
+                ON admin_media_cache (admin_id, media_group_id, message_id)
                 """
             )
             await db.commit()
@@ -343,20 +366,25 @@ class EventStorage:
         scheduled_at: datetime,
         created_by: int,
         target_chat_id: Optional[str] = None,
+        payload: Optional[dict[str, Any]] = None,
     ) -> int:
         now = _utc_now()
+        serialized_payload = None
+        if payload is not None:
+            serialized_payload = json.dumps(payload, ensure_ascii=False, sort_keys=True)
         async with aiosqlite.connect(self.database_path) as db:
             cursor = await db.execute(
                 """
                 INSERT INTO scheduled_jobs (
-                    job_type, status, text, target_chat_id, created_by,
+                    job_type, status, text, payload, target_chat_id, created_by,
                     created_at, scheduled_at
                 )
-                VALUES (?, 'scheduled', ?, ?, ?, ?, ?)
+                VALUES (?, 'scheduled', ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     job_type,
                     text,
+                    serialized_payload,
                     target_chat_id,
                     created_by,
                     now,
@@ -451,7 +479,7 @@ class EventStorage:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 """
-                SELECT id, job_type, status, scheduled_at, target_chat_id, text
+                SELECT id, job_type, status, scheduled_at, target_chat_id, text, payload
                 FROM scheduled_jobs
                 WHERE status = 'scheduled'
                 ORDER BY scheduled_at, id
@@ -461,6 +489,80 @@ class EventStorage:
             ) as cursor:
                 rows = await cursor.fetchall()
         return [dict(row) for row in rows]
+
+    async def save_admin_media(
+        self,
+        *,
+        admin_id: int,
+        message_id: int,
+        media_type: str,
+        file_id: str,
+        media_group_id: Optional[str] = None,
+        caption: Optional[str] = None,
+    ) -> None:
+        async with aiosqlite.connect(self.database_path) as db:
+            await db.execute(
+                """
+                INSERT INTO admin_media_cache (
+                    admin_id, media_group_id, message_id, media_type,
+                    file_id, caption, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(admin_id, message_id) DO UPDATE SET
+                    media_group_id = excluded.media_group_id,
+                    media_type = excluded.media_type,
+                    file_id = excluded.file_id,
+                    caption = excluded.caption,
+                    created_at = excluded.created_at
+                """,
+                (
+                    admin_id,
+                    media_group_id,
+                    message_id,
+                    media_type,
+                    file_id,
+                    caption,
+                    _utc_now(),
+                ),
+            )
+            await db.commit()
+
+    async def admin_media_group(
+        self,
+        *,
+        admin_id: int,
+        media_group_id: str,
+    ) -> list[dict[str, Any]]:
+        async with aiosqlite.connect(self.database_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                """
+                SELECT media_type, file_id, caption, message_id
+                FROM admin_media_cache
+                WHERE admin_id = ?
+                  AND media_group_id = ?
+                ORDER BY message_id
+                """,
+                (admin_id, media_group_id),
+            ) as cursor:
+                rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
+    async def prune_admin_media_cache(self, keep_latest: int = 200) -> None:
+        async with aiosqlite.connect(self.database_path) as db:
+            await db.execute(
+                """
+                DELETE FROM admin_media_cache
+                WHERE id NOT IN (
+                    SELECT id
+                    FROM admin_media_cache
+                    ORDER BY created_at DESC, id DESC
+                    LIMIT ?
+                )
+                """,
+                (keep_latest,),
+            )
+            await db.commit()
 
     async def analytics_overview(self) -> dict[str, int]:
         async with aiosqlite.connect(self.database_path) as db:
@@ -518,6 +620,13 @@ class EventStorage:
         for column_name, column_type in required_columns.items():
             if column_name not in existing_columns:
                 await db.execute(f"ALTER TABLE users ADD COLUMN {column_name} {column_type}")
+
+    async def _ensure_scheduled_job_columns(self, db: aiosqlite.Connection) -> None:
+        async with db.execute("PRAGMA table_info(scheduled_jobs)") as cursor:
+            existing_columns = {row[1] for row in await cursor.fetchall()}
+
+        if "payload" not in existing_columns:
+            await db.execute("ALTER TABLE scheduled_jobs ADD COLUMN payload TEXT")
 
 
 async def _fetch_one(

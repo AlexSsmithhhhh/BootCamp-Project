@@ -94,23 +94,32 @@ Admin-команды доступны только Telegram user IDs из `TELEG
 Команды:
 
 - `/post текст` - сразу публикует пост в `TELEGRAM_CHANNEL_ID`.
+- `/post` ответом на фото/альбом/видео/PDF - публикует медиа в `TELEGRAM_CHANNEL_ID`.
 - `/delete_post message_id` - удаляет пост из `TELEGRAM_CHANNEL_ID`.
 - `/broadcast текст` - сразу отправляет сообщение всем пользователям со статусом `active`.
+- `/broadcast` ответом на фото/альбом/видео/PDF - отправляет медиа всем пользователям со статусом `active`.
 - `/schedule_post YYYY-MM-DD HH:MM | текст` - сохраняет отложенный пост.
+- `/schedule_post YYYY-MM-DD HH:MM` ответом на медиа - сохраняет отложенный медиа-пост.
 - `/schedule_broadcast YYYY-MM-DD HH:MM | текст` - сохраняет отложенную рассылку.
+- `/schedule_broadcast YYYY-MM-DD HH:MM` ответом на медиа - сохраняет отложенную медиа-рассылку.
 - `/scheduled` - показывает ближайшие задания.
 - `/cancel_scheduled id` - отменяет задание, если оно еще не выполнено.
+
+Для медиа админ сначала отправляет материал боту в личку, затем отвечает на это сообщение командой. Поддерживаются одиночное фото, Telegram-альбом из нескольких фото, видео и PDF/document. Caption можно взять из исходного медиа или переопределить текстом команды.
 
 Отложенные задания хранятся в `scheduled_jobs`:
 
 - `job_type`: `channel_post` или `broadcast`;
 - `status`: `scheduled`, `processing`, `sent`, `cancelled`, `failed`;
 - `text`;
+- `payload`: JSON с типом отправки (`text`, `photo`, `video`, `document`, `media_group`) и Telegram `file_id`;
 - `target_chat_id`;
 - `created_by`;
 - `scheduled_at`, `created_at`, `sent_at`;
 - `telegram_message_id`;
 - `attempts`, `last_error`.
+
+Админские альбомы временно кешируются в `admin_media_cache`, чтобы команда ответом на одну фотографию могла отправить весь альбом.
 
 Scheduler worker запускается вместе с Telegram-ботом и проверяет due jobs каждые `SCHEDULER_POLL_INTERVAL_SECONDS` секунд.
 

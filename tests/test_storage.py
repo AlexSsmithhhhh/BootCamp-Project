@@ -1,3 +1,4 @@
+import json
 import unittest
 from contextlib import closing
 from datetime import datetime, timezone
@@ -89,6 +90,7 @@ class EventStorageTests(unittest.IsolatedAsyncioTestCase):
             job_id = await storage.create_scheduled_job(
                 job_type="channel_post",
                 text="Hello channel",
+                payload={"kind": "photo", "file_id": "photo-file", "caption": "Hello"},
                 target_chat_id="-100123",
                 scheduled_at=datetime.now(timezone.utc),
                 created_by=1001,
@@ -96,6 +98,7 @@ class EventStorageTests(unittest.IsolatedAsyncioTestCase):
 
             jobs = await storage.due_scheduled_jobs()
             self.assertEqual(jobs[0]["id"], job_id)
+            self.assertEqual(json.loads(jobs[0]["payload"])["kind"], "photo")
             self.assertTrue(await storage.mark_job_processing(job_id))
             self.assertFalse(await storage.mark_job_processing(job_id))
             await storage.mark_job_sent(job_id, telegram_message_id=55)
@@ -112,6 +115,36 @@ class EventStorageTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(status, "sent")
         self.assertEqual(message_id, 55)
+
+    async def test_admin_media_cache_collects_album(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            database_path = Path(tmp_dir) / "bot.sqlite3"
+            storage = EventStorage(database_path)
+            await storage.init()
+
+            await storage.save_admin_media(
+                admin_id=1001,
+                media_group_id="album-1",
+                message_id=10,
+                media_type="photo",
+                file_id="photo-1",
+                caption="Album caption",
+            )
+            await storage.save_admin_media(
+                admin_id=1001,
+                media_group_id="album-1",
+                message_id=11,
+                media_type="photo",
+                file_id="photo-2",
+            )
+
+            media = await storage.admin_media_group(
+                admin_id=1001,
+                media_group_id="album-1",
+            )
+
+        self.assertEqual([item["file_id"] for item in media], ["photo-1", "photo-2"])
+        self.assertEqual(media[0]["caption"], "Album caption")
 
 
 if __name__ == "__main__":
