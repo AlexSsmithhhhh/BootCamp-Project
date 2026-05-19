@@ -113,10 +113,11 @@ railway.cmd up ".\services\discord-bot" --path-as-root --service "bootcamp-disco
 В `services/discord-bot` восстановлен рабочий Discord-бот для BootCamp Week leaderboard:
 
 - логинится по текущим Railway-переменным;
-- регистрирует guild slash-команды `ping`, `leaderboard`, `my-points`, `leaderboard-dashboard`;
+- регистрирует guild slash-команды `ping`, `leaderboard`, `my-points`, `award-points`, `leaderboard-dashboard`;
 - считает +2 за содержательное сообщение в рабочих чатах, до 30 баллов в день;
 - считает +10 за ✅ или 🔥 от Mentor/Support, до 50 баллов в день;
 - считает +25 за stage от 15 минут, один раз в день;
+- дает Mentor/Support вручную начислять баллы через `/award-points`;
 - хранит данные в `/app/data/discord-leaderboard.json` на Railway volume;
 - обновляет dashboard в канале `leaderboard` каждые 5 минут.
 
@@ -128,7 +129,8 @@ railway.cmd up ".\services\discord-bot" --path-as-root --service "bootcamp-disco
 - `LEADERBOARD_BACKFILL_ON_STARTUP` = `true` by default; restores recent message/reaction history from working channels after deploy without double-counting already awarded messages.
 - `LEADERBOARD_BACKFILL_DAYS` = `14` by default.
 - `LEADERBOARD_BACKFILL_MAX_MESSAGES_PER_CHANNEL` = `1000` by default.
-- роли Mentor/Support определяются по названиям ролей `Mentor` и `Support`.
+- `LEADERBOARD_MANUAL_AWARD_MAX_POINTS` = `100` by default.
+- роли Mentor/Support определяются по названиям ролей `Mentor`, `ментор`, `Support`, `саппорт`, `наставник`.
 
 ## Безопасность
 

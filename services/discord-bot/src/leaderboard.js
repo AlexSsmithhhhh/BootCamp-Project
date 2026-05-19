@@ -50,7 +50,7 @@ export function createLeaderboardEmbed(storage, config, { personalUserId = null 
     embed.addFields({
       name: 'Ваш результат',
       value: user
-        ? `Место: ${rank ?? '—'}\nБаллы: **${user.totalPoints}**\nСообщения: ${user.stats.messagePoints}\nРеакции: ${user.stats.reactionPoints}\nStage: ${user.stats.stagePoints}`
+        ? `Место: ${rank ?? '—'}\nБаллы: **${user.totalPoints}**\nСообщения: ${user.stats.messagePoints}\nРеакции: ${user.stats.reactionPoints}\nStage: ${user.stats.stagePoints}\nОт менторов: ${user.stats.manualPoints || 0}`
         : 'Пока нет начислений.',
     });
   }
@@ -89,6 +89,7 @@ export function createPersonalEmbed(storage, config, userId) {
             `За сообщения: ${user.stats.messagePoints}`,
             `За реакции: ${user.stats.reactionPoints}`,
             `За stage: ${user.stats.stagePoints}`,
+            `От менторов: ${user.stats.manualPoints || 0}`,
           ].join('\n')
           : '0',
       },

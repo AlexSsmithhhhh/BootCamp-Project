@@ -79,6 +79,7 @@ export const config = {
   backfillMaxMessagesPerChannel: optionalNumber('LEADERBOARD_BACKFILL_MAX_MESSAGES_PER_CHANNEL', 1000),
   messageMinLength: optionalNumber('LEADERBOARD_MESSAGE_MIN_LENGTH', 20),
   messageMinWords: optionalNumber('LEADERBOARD_MESSAGE_MIN_WORDS', 3),
+  manualAwardMaxPoints: optionalNumber('LEADERBOARD_MANUAL_AWARD_MAX_POINTS', 100),
   stageMinMs: optionalNumber('LEADERBOARD_STAGE_MIN_MS', 15 * 60 * 1000),
   timeZone: process.env.LEADERBOARD_TIME_ZONE || 'Europe/Kiev',
   scores: {

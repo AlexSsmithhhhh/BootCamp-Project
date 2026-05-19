@@ -51,6 +51,7 @@ export class LeaderboardStorage {
           messagePoints: 0,
           reactionPoints: 0,
           stagePoints: 0,
+          manualPoints: 0,
           contentMessages: 0,
           mentorReactions: 0,
           stageAwards: 0,
@@ -134,6 +135,21 @@ export class LeaderboardStorage {
     this.addEvent(user.id, 'mentor_reaction', award, meta, meta.createdAt);
     await this.save();
     return { awarded: award, capped: false };
+  }
+
+  async awardManual(userLike, meta, points) {
+    const award = Number(points);
+    if (!Number.isInteger(award) || award <= 0) {
+      return { awarded: 0, reason: 'invalid_points' };
+    }
+
+    const user = this.user(userLike);
+    user.totalPoints += award;
+    user.stats.manualPoints = (user.stats.manualPoints || 0) + award;
+    user.lastActiveAt = new Date().toISOString();
+    this.addEvent(user.id, 'manual_award', award, meta);
+    await this.save();
+    return { awarded: award, totalPoints: user.totalPoints };
   }
 
   async startStageSession(userLike, channelId) {

@@ -7,6 +7,7 @@
 - `/ping`
 - `/leaderboard`
 - `/my-points`
+- `/award-points`
 - `/leaderboard-dashboard`
 
 ## Scoring
@@ -14,6 +15,7 @@
 - +2 балла за содержательное сообщение в рабочих чатах, максимум 30 баллов в день.
 - +10 баллов за реакцию ✅ или 🔥 от роли Mentor/Support, максимум 50 баллов в день.
 - +25 баллов за участие в stage от 15 минут, один раз в день.
+- Роль `Mentor`, `ментор`, `Support`, `саппорт` или `наставник` может вручную начислять баллы командой `/award-points`.
 
 Рабочие Railway-переменные:
 
@@ -23,6 +25,7 @@
 - `LEADERBOARD_BACKFILL_ON_STARTUP` - включить восстановление истории рабочих каналов при старте, по умолчанию `true`.
 - `LEADERBOARD_BACKFILL_DAYS` - сколько дней истории читать при восстановлении, по умолчанию `14`.
 - `LEADERBOARD_BACKFILL_MAX_MESSAGES_PER_CHANNEL` - лимит сообщений на канал для восстановления, по умолчанию `1000`.
+- `LEADERBOARD_MANUAL_AWARD_MAX_POINTS` - максимум баллов за одно ручное начисление, по умолчанию `100`.
 
 Данные хранятся в `/app/data/discord-leaderboard.json` на Railway volume.
 

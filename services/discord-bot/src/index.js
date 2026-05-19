@@ -55,6 +55,24 @@ const commands = [
     .setName('my-points')
     .setDescription('Проверить свои баллы BootCamp.'),
   new SlashCommandBuilder()
+    .setName('award-points')
+    .setDescription('Начислить участнику баллы вручную. Доступно роли Mentor/ментор.')
+    .addUserOption((option) => option
+      .setName('user')
+      .setDescription('Участник, которому начислить баллы.')
+      .setRequired(true))
+    .addIntegerOption((option) => option
+      .setName('points')
+      .setDescription('Сколько баллов начислить.')
+      .setMinValue(1)
+      .setMaxValue(config.manualAwardMaxPoints)
+      .setRequired(true))
+    .addStringOption((option) => option
+      .setName('reason')
+      .setDescription('Причина начисления.')
+      .setMaxLength(200)
+      .setRequired(false)),
+  new SlashCommandBuilder()
     .setName('leaderboard-dashboard')
     .setDescription('Создать или обновить закрепляемый dashboard в текущем канале.')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
@@ -241,6 +259,51 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (interaction.commandName === 'my-points') {
       await interaction.reply({
         embeds: [createPersonalEmbed(storage, config, interaction.user.id)],
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    if (interaction.commandName === 'award-points') {
+      const issuer = await interaction.guild.members.fetch(interaction.user.id);
+      if (!isMentorOrSupport(issuer, config)) {
+        await interaction.reply({
+          content: 'Эта команда доступна только администраторам и роли Mentor/ментор.',
+          flags: MessageFlags.Ephemeral,
+        });
+        return;
+      }
+
+      const targetUser = interaction.options.getUser('user', true);
+      const points = interaction.options.getInteger('points', true);
+      const reason = interaction.options.getString('reason')?.trim() || 'Без причины';
+
+      if (targetUser.bot) {
+        await interaction.reply({
+          content: 'Ботам баллы не начисляем.',
+          flags: MessageFlags.Ephemeral,
+        });
+        return;
+      }
+
+      const targetMember = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
+      const result = await storage.awardManual(
+        userLikeFromMemberOrUser(targetMember ?? targetUser),
+        {
+          awardedBy: interaction.user.id,
+          channelId: interaction.channelId,
+          reason,
+        },
+        points,
+      );
+
+      await updateDashboard(client, storage, config);
+      console.log(
+        `Awarded manual points: user=${targetUser.id} issuer=${interaction.user.id} ` +
+          `points=${result.awarded} reason=${reason}`,
+      );
+      await interaction.reply({
+        content: `Начислено ${result.awarded} баллов участнику <@${targetUser.id}>. Теперь всего: ${result.totalPoints}.`,
         flags: MessageFlags.Ephemeral,
       });
       return;
