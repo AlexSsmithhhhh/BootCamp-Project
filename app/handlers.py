@@ -3,12 +3,14 @@ from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import Message, ReplyKeyboardRemove
 
 from app import content
+from app.admin import admin_commands
 from app.config import Settings
 from app.keyboards import contact_keyboard, discord_url_keyboard
 from app.storage import EventStorage
 
 
 router = Router()
+admin_commands(router)
 
 
 @router.message(CommandStart())

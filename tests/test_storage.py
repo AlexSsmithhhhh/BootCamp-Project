@@ -1,5 +1,6 @@
 import unittest
 from contextlib import closing
+from datetime import datetime, timezone
 from pathlib import Path
 from sqlite3 import connect
 from tempfile import TemporaryDirectory
@@ -78,6 +79,39 @@ class EventStorageTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(start_payload, "utm_source=instagram&campaign=bootcamp")
         self.assertEqual(source, "instagram")
+
+    async def test_scheduled_jobs_lifecycle(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            database_path = Path(tmp_dir) / "bot.sqlite3"
+            storage = EventStorage(database_path)
+            await storage.init()
+
+            job_id = await storage.create_scheduled_job(
+                job_type="channel_post",
+                text="Hello channel",
+                target_chat_id="-100123",
+                scheduled_at=datetime.now(timezone.utc),
+                created_by=1001,
+            )
+
+            jobs = await storage.due_scheduled_jobs()
+            self.assertEqual(jobs[0]["id"], job_id)
+            self.assertTrue(await storage.mark_job_processing(job_id))
+            self.assertFalse(await storage.mark_job_processing(job_id))
+            await storage.mark_job_sent(job_id, telegram_message_id=55)
+
+            with closing(connect(database_path)) as db:
+                status, message_id = db.execute(
+                    """
+                    SELECT status, telegram_message_id
+                    FROM scheduled_jobs
+                    WHERE id = ?
+                    """,
+                    (job_id,),
+                ).fetchone()
+
+        self.assertEqual(status, "sent")
+        self.assertEqual(message_id, 55)
 
 
 if __name__ == "__main__":

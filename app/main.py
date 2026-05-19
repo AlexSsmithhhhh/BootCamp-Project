@@ -9,6 +9,7 @@ from aiogram.enums import ParseMode
 
 from app.config import ConfigurationError, Settings
 from app.handlers import router
+from app.scheduler import run_scheduler
 from app.storage import EventStorage
 
 
@@ -25,12 +26,17 @@ async def run_bot() -> None:
     dispatcher.include_router(router)
 
     await bot.delete_webhook(drop_pending_updates=True)
-    await dispatcher.start_polling(
-        bot,
-        settings=settings,
-        storage=storage,
-        allowed_updates=dispatcher.resolve_used_update_types(),
-    )
+    scheduler_task = asyncio.create_task(run_scheduler(bot, storage, settings))
+    try:
+        await dispatcher.start_polling(
+            bot,
+            settings=settings,
+            storage=storage,
+            allowed_updates=dispatcher.resolve_used_update_types(),
+        )
+    finally:
+        scheduler_task.cancel()
+        await asyncio.gather(scheduler_task, return_exceptions=True)
 
 
 def main() -> None:

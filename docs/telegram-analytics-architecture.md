@@ -34,6 +34,10 @@ Telegram-бот хранит данные в двух слоях.
 - `help_requested` - пользователь вызвал `/help`.
 - `fallback_message` - пользователь написал что-то вне сценария.
 - `delivery_failed` - будущий маркер, когда при рассылке Telegram вернет ошибку доставки.
+- `admin_channel_post_sent` - админ опубликовал пост в канал через бота.
+- `admin_channel_post_deleted` - админ удалил пост из канала.
+- `admin_broadcast_sent` - админ запустил рассылку.
+- `scheduled_broadcast_sent` - отложенная рассылка выполнена scheduler worker.
 
 ## Подписки И Отписки
 
@@ -83,6 +87,35 @@ https://t.me/<bot_username>?start=utm_source=instagram&campaign=bootcamp_week
 - `payload`
 - `created_at`
 
+## Admin Publications And Broadcasts
+
+Admin-команды доступны только Telegram user IDs из `TELEGRAM_ADMIN_IDS`.
+
+Команды:
+
+- `/post текст` - сразу публикует пост в `TELEGRAM_CHANNEL_ID`.
+- `/delete_post message_id` - удаляет пост из `TELEGRAM_CHANNEL_ID`.
+- `/broadcast текст` - сразу отправляет сообщение всем пользователям со статусом `active`.
+- `/schedule_post YYYY-MM-DD HH:MM | текст` - сохраняет отложенный пост.
+- `/schedule_broadcast YYYY-MM-DD HH:MM | текст` - сохраняет отложенную рассылку.
+- `/scheduled` - показывает ближайшие задания.
+- `/cancel_scheduled id` - отменяет задание, если оно еще не выполнено.
+
+Отложенные задания хранятся в `scheduled_jobs`:
+
+- `job_type`: `channel_post` или `broadcast`;
+- `status`: `scheduled`, `processing`, `sent`, `cancelled`, `failed`;
+- `text`;
+- `target_chat_id`;
+- `created_by`;
+- `scheduled_at`, `created_at`, `sent_at`;
+- `telegram_message_id`;
+- `attempts`, `last_error`.
+
+Scheduler worker запускается вместе с Telegram-ботом и проверяет due jobs каждые `SCHEDULER_POLL_INTERVAL_SECONDS` секунд.
+
+Рассылки обновляют аналитику отписок: если Telegram возвращает ошибку, что пользователь заблокировал бота, пользователь помечается как `blocked`, а событие `delivery_failed` записывается в журнал.
+
 ## Будущие Отчеты
 
 Минимальный admin dashboard должен показывать:
@@ -102,6 +135,6 @@ https://t.me/<bot_username>?start=utm_source=instagram&campaign=bootcamp_week
 
 1. Добавить admin-only команду `/stats` для короткой сводки.
 2. Добавить CSV export по пользователям и событиям.
-3. Добавить broadcast-модуль с безопасной отправкой и фиксацией `delivery_failed`.
+3. Добавить preview/confirm flow для постов и рассылок перед отправкой.
 4. Добавить campaign/deep-link генератор для разных источников трафика.
 5. Связать Telegram пользователя с Discord участником через invite tracking или отдельный код подтверждения.

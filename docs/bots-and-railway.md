@@ -95,6 +95,25 @@ railway.cmd logs --service "bootcamp-discord-bot" --environment "production" --l
 - `DISCORD_INVITE_URL`
 - `DATABASE_PATH`, обычно `data/bot.sqlite3`
 
+Дополнительные переменные для admin-команд Telegram:
+
+- `TELEGRAM_ADMIN_IDS` - comma-separated Telegram user IDs администраторов, которым доступны публикации и рассылки.
+- `TELEGRAM_CHANNEL_ID` - канал для публикаций, например `@channel_name` или `-100...`.
+- `SCHEDULER_POLL_INTERVAL_SECONDS` - частота проверки отложенных заданий, по умолчанию `30`.
+
+Admin-команды Telegram:
+
+- `/admin_help` - список команд.
+- `/post текст` - сразу опубликовать пост в `TELEGRAM_CHANNEL_ID`.
+- `/delete_post message_id` - удалить пост из канала.
+- `/broadcast текст` - сразу отправить рассылку всем активным пользователям.
+- `/schedule_post YYYY-MM-DD HH:MM | текст` - запланировать пост в канал.
+- `/schedule_broadcast YYYY-MM-DD HH:MM | текст` - запланировать рассылку.
+- `/scheduled` - ближайшие активные задания.
+- `/cancel_scheduled id` - отменить задание.
+
+Время в командах планирования вводится в timezone `Europe/Kiev`. Задания хранятся в SQLite table `scheduled_jobs` и выполняются фоновым worker внутри Telegram-сервиса.
+
 Локальная проверка:
 
 ```powershell

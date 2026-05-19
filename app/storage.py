@@ -50,6 +50,24 @@ class EventStorage:
             )
             await db.execute(
                 """
+                CREATE TABLE IF NOT EXISTS scheduled_jobs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    job_type TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'scheduled',
+                    text TEXT NOT NULL,
+                    target_chat_id TEXT,
+                    created_by INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    scheduled_at TEXT NOT NULL,
+                    sent_at TEXT,
+                    telegram_message_id INTEGER,
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    last_error TEXT
+                )
+                """
+            )
+            await db.execute(
+                """
                 CREATE INDEX IF NOT EXISTS idx_events_telegram_id_created_at
                 ON events (telegram_id, created_at)
                 """
@@ -78,6 +96,12 @@ class EventStorage:
                 """
                 CREATE INDEX IF NOT EXISTS idx_users_source
                 ON users (source)
+                """
+            )
+            await db.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_status_scheduled_at
+                ON scheduled_jobs (status, scheduled_at)
                 """
             )
             await db.commit()
@@ -298,6 +322,146 @@ class EventStorage:
             },
         )
 
+    async def active_user_ids(self) -> list[int]:
+        async with aiosqlite.connect(self.database_path) as db:
+            async with db.execute(
+                """
+                SELECT telegram_id
+                FROM users
+                WHERE subscription_status = 'active'
+                ORDER BY first_seen_at
+                """
+            ) as cursor:
+                rows = await cursor.fetchall()
+        return [int(row[0]) for row in rows]
+
+    async def create_scheduled_job(
+        self,
+        *,
+        job_type: str,
+        text: str,
+        scheduled_at: datetime,
+        created_by: int,
+        target_chat_id: Optional[str] = None,
+    ) -> int:
+        now = _utc_now()
+        async with aiosqlite.connect(self.database_path) as db:
+            cursor = await db.execute(
+                """
+                INSERT INTO scheduled_jobs (
+                    job_type, status, text, target_chat_id, created_by,
+                    created_at, scheduled_at
+                )
+                VALUES (?, 'scheduled', ?, ?, ?, ?, ?)
+                """,
+                (
+                    job_type,
+                    text,
+                    target_chat_id,
+                    created_by,
+                    now,
+                    _datetime_to_utc_iso(scheduled_at),
+                ),
+            )
+            await db.commit()
+            return int(cursor.lastrowid)
+
+    async def due_scheduled_jobs(self, limit: int = 10) -> list[dict[str, Any]]:
+        now = _utc_now()
+        async with aiosqlite.connect(self.database_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                """
+                SELECT *
+                FROM scheduled_jobs
+                WHERE status = 'scheduled'
+                  AND scheduled_at <= ?
+                ORDER BY scheduled_at, id
+                LIMIT ?
+                """,
+                (now, limit),
+            ) as cursor:
+                rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
+    async def mark_job_processing(self, job_id: int) -> bool:
+        async with aiosqlite.connect(self.database_path) as db:
+            cursor = await db.execute(
+                """
+                UPDATE scheduled_jobs
+                SET status = 'processing',
+                    attempts = attempts + 1,
+                    last_error = NULL
+                WHERE id = ?
+                  AND status = 'scheduled'
+                """,
+                (job_id,),
+            )
+            await db.commit()
+            return cursor.rowcount == 1
+
+    async def mark_job_sent(
+        self,
+        job_id: int,
+        *,
+        telegram_message_id: Optional[int] = None,
+    ) -> None:
+        async with aiosqlite.connect(self.database_path) as db:
+            await db.execute(
+                """
+                UPDATE scheduled_jobs
+                SET status = 'sent',
+                    sent_at = ?,
+                    telegram_message_id = ?
+                WHERE id = ?
+                """,
+                (_utc_now(), telegram_message_id, job_id),
+            )
+            await db.commit()
+
+    async def mark_job_failed(self, job_id: int, error: str) -> None:
+        async with aiosqlite.connect(self.database_path) as db:
+            await db.execute(
+                """
+                UPDATE scheduled_jobs
+                SET status = 'failed',
+                    last_error = ?
+                WHERE id = ?
+                """,
+                (error[:500], job_id),
+            )
+            await db.commit()
+
+    async def cancel_scheduled_job(self, job_id: int) -> bool:
+        async with aiosqlite.connect(self.database_path) as db:
+            cursor = await db.execute(
+                """
+                UPDATE scheduled_jobs
+                SET status = 'cancelled'
+                WHERE id = ?
+                  AND status = 'scheduled'
+                """,
+                (job_id,),
+            )
+            await db.commit()
+            return cursor.rowcount == 1
+
+    async def list_scheduled_jobs(self, limit: int = 10) -> list[dict[str, Any]]:
+        async with aiosqlite.connect(self.database_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                """
+                SELECT id, job_type, status, scheduled_at, target_chat_id, text
+                FROM scheduled_jobs
+                WHERE status = 'scheduled'
+                ORDER BY scheduled_at, id
+                LIMIT ?
+                """,
+                (limit,),
+            ) as cursor:
+                rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
     async def analytics_overview(self) -> dict[str, int]:
         async with aiosqlite.connect(self.database_path) as db:
             totals = {
@@ -383,6 +547,12 @@ def _user_values(user: User) -> tuple[int, Optional[str], str, Optional[str], Op
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _datetime_to_utc_iso(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat()
 
 
 def _source_from_payload(start_payload: Optional[str]) -> Optional[str]:
