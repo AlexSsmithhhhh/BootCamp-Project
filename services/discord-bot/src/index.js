@@ -22,6 +22,7 @@ import {
   isStageChannel,
   isSubstantiveMessage,
   isWorkingChannel,
+  MY_POINTS_BUTTON_ID,
   updateDashboard,
   userLikeFromMemberOrUser,
 } from './leaderboard.js';
@@ -236,11 +237,27 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
-  if (!interaction.isChatInputCommand() || interaction.guildId !== config.guildId) {
+  if (interaction.guildId !== config.guildId) {
     return;
   }
 
   try {
+    if (interaction.isButton()) {
+      if (interaction.customId !== MY_POINTS_BUTTON_ID) {
+        return;
+      }
+      const excludedUserIds = await excludedLeaderboardUserIds(interaction.guild, storage, config);
+      await interaction.reply({
+        embeds: [createPersonalEmbed(storage, config, interaction.user.id, { excludedUserIds })],
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    if (!interaction.isChatInputCommand()) {
+      return;
+    }
+
     if (interaction.commandName === 'ping') {
       await interaction.reply({
         content: 'Discord-бот работает. Leaderboard активен.',

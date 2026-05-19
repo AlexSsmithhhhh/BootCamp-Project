@@ -1,4 +1,7 @@
 import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   ChannelType,
   EmbedBuilder,
   PermissionFlagsBits,
@@ -6,6 +9,7 @@ import {
 
 const POSITIVE_REACTIONS = new Set(['✅', '🔥']);
 const DEFAULT_IGNORED_CHANNEL_NAME = /(?:rules|announc|welcome|start|faq|guide|leaderboard|лидер|анонс|правил)/i;
+export const MY_POINTS_BUTTON_ID = 'leaderboard:my-points';
 
 export function createLeaderboardEmbed(
   storage,
@@ -24,7 +28,7 @@ export function createLeaderboardEmbed(
     .setColor(0x2f9df4)
     .setDescription(ranking)
     .setFooter({
-      text: `Топ ${config.publicLeaderboardLimit} · Свои баллы: /my-points · ${formatDateTime(new Date(), config.timeZone)}`,
+      text: `Топ ${config.publicLeaderboardLimit} · Свои баллы: кнопка ниже · ${formatDateTime(new Date(), config.timeZone)}`,
     });
 
   if (personalUserId) {
@@ -39,6 +43,17 @@ export function createLeaderboardEmbed(
   }
 
   return embed;
+}
+
+export function createLeaderboardComponents() {
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(MY_POINTS_BUTTON_ID)
+        .setLabel('Мои баллы')
+        .setStyle(ButtonStyle.Primary),
+    ),
+  ];
 }
 
 export function createPersonalEmbed(storage, config, userId, { excludedUserIds = new Set() } = {}) {
@@ -217,7 +232,7 @@ export async function updateDashboard(client, storage, config, { forceChannelId 
     }
 
     try {
-      await message.edit({ embeds: [embed] });
+      await message.edit({ embeds: [embed], components: createLeaderboardComponents() });
     } catch (error) {
       console.error(
         `Failed to edit fixed leaderboard dashboard message ${fixedMessageId}. ` +
@@ -245,9 +260,9 @@ export async function updateDashboard(client, storage, config, { forceChannelId 
   }
 
   if (message) {
-    await message.edit({ embeds: [embed] });
+    await message.edit({ embeds: [embed], components: createLeaderboardComponents() });
   } else {
-    message = await channel.send({ embeds: [embed] });
+    message = await channel.send({ embeds: [embed], components: createLeaderboardComponents() });
     try {
       await message.pin('BootCamp leaderboard dashboard');
     } catch {
