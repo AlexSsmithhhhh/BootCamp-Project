@@ -35,6 +35,14 @@ def is_command_text(message: Message) -> bool:
     return text.startswith("/")
 
 
+def start_message_for_state(*, is_new_user: bool, has_contact: bool) -> str:
+    if has_contact:
+        return content.RETURNING_WITH_CONTACT_MESSAGE
+    if is_new_user:
+        return content.START_MESSAGE
+    return content.RETURNING_WITHOUT_CONTACT_MESSAGE
+
+
 async def send_contact_prompt(
     message: Message,
     storage: EventStorage,
@@ -73,11 +81,16 @@ async def handle_start(
     if message.from_user is None:
         return
 
-    await storage.record_start(message.from_user, command.args)
-    if await has_contact_access(storage, message.from_user.id):
+    is_new_user = await storage.record_start(message.from_user, command.args)
+    has_contact = await has_contact_access(storage, message.from_user.id)
+    start_message = start_message_for_state(
+        is_new_user=is_new_user,
+        has_contact=has_contact,
+    )
+    if has_contact:
         await storage.mark_discord_access_sent(message.from_user)
         await message.answer(
-            "Контакт уже сохранен. Повторно делиться номером не нужно.",
+            start_message,
             reply_markup=ReplyKeyboardRemove(),
         )
         await message.answer(
@@ -86,7 +99,7 @@ async def handle_start(
         )
         return
 
-    await message.answer(content.START_MESSAGE, reply_markup=contact_keyboard())
+    await message.answer(start_message, reply_markup=contact_keyboard())
     await storage.mark_contact_prompted(message.from_user)
 
 
@@ -183,10 +196,6 @@ async def handle_fallback(
         return
 
     if has_contact:
-        await message.answer(
-            "Доступ уже открыт. Если нужна ссылка снова, отправь /discord.",
-            reply_markup=ReplyKeyboardRemove(),
-        )
         return
 
     if is_command_text(message):

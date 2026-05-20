@@ -273,28 +273,42 @@ class EventStorage:
             await db.commit()
 
     async def save_contact(self, user: User, contact: Contact) -> None:
-        await self.ensure_user(user)
         now = _utc_now()
         async with aiosqlite.connect(self.database_path) as db:
             await db.execute(
                 """
-                UPDATE users
-                SET phone_number = ?,
-                    contact_first_name = ?,
-                    contact_last_name = ?,
-                    contact_received_at = ?,
-                    last_seen_at = ?,
-                    last_interaction_at = ?
-                WHERE telegram_id = ?
+                INSERT INTO users (
+                    telegram_id, username, first_name, last_name, language_code,
+                    phone_number, contact_first_name, contact_last_name,
+                    contact_received_at, first_seen_at, last_seen_at, start_count,
+                    subscription_status, subscribed_at, last_interaction_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'active', ?, ?)
+                ON CONFLICT(telegram_id) DO UPDATE SET
+                    username = excluded.username,
+                    first_name = excluded.first_name,
+                    last_name = excluded.last_name,
+                    language_code = excluded.language_code,
+                    phone_number = excluded.phone_number,
+                    contact_first_name = excluded.contact_first_name,
+                    contact_last_name = excluded.contact_last_name,
+                    contact_received_at = excluded.contact_received_at,
+                    last_seen_at = excluded.last_seen_at,
+                    last_interaction_at = excluded.last_interaction_at,
+                    subscription_status = 'active',
+                    unsubscribed_at = NULL,
+                    subscribed_at = COALESCE(users.subscribed_at, excluded.subscribed_at)
                 """,
                 (
+                    *_user_values(user),
                     contact.phone_number,
                     contact.first_name,
                     contact.last_name,
                     now,
                     now,
                     now,
-                    user.id,
+                    now,
+                    now,
                 ),
             )
             await db.commit()
