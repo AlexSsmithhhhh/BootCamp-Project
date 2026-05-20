@@ -16,7 +16,7 @@ class FakeBot:
         self.blocked_ids = blocked_ids or set()
         self.sent_messages: list[tuple[int, str]] = []
 
-    async def send_message(self, chat_id: int, text: str):
+    async def send_message(self, chat_id: int, text: str, **kwargs):
         if chat_id in self.blocked_ids:
             method = SendMessage(chat_id=chat_id, text=text)
             raise TelegramForbiddenError(method, "bot was blocked by the user")

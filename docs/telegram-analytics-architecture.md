@@ -101,6 +101,7 @@ Admin-команды доступны Telegram user IDs из `TELEGRAM_ADMIN_IDS
 - `/post текст` - создает preview и отправляет пользователям бота только после подтверждения.
 - `/post` ответом на фото/альбом/видео/PDF - создает preview медиа и отправляет пользователям бота только после подтверждения.
 - Фото/видео/PDF с caption `/post текст` - создает preview медиа с подписью.
+- `/manage` - показывает запланированные отправки и дает кнопки удаления.
 - `/delete_post message_id` - удаляет пост из `TELEGRAM_CHANNEL_ID`.
 - `/broadcast текст` - сразу отправляет сообщение всем пользователям со статусом `active`.
 - `/broadcast` ответом на фото/альбом/видео/PDF - отправляет медиа всем пользователям со статусом `active`.
@@ -119,7 +120,7 @@ Admin-команды доступны Telegram user IDs из `TELEGRAM_ADMIN_IDS
 - `job_type`: `channel_post` или `broadcast`;
 - `status`: `scheduled`, `processing`, `sent`, `cancelled`, `failed`;
 - `text`;
-- `payload`: JSON с типом отправки (`text`, `photo`, `video`, `document`, `media_group`) и Telegram `file_id`;
+- `payload`: JSON с типом отправки (`text`, `photo`, `video`, `document`, `media_group`), Telegram `file_id` и optional `buttons`;
 - `target_chat_id`;
 - `created_by`;
 - `scheduled_at`, `created_at`, `sent_at`;
@@ -128,7 +129,7 @@ Admin-команды доступны Telegram user IDs из `TELEGRAM_ADMIN_IDS
 
 Админские альбомы временно кешируются в `admin_media_cache`, чтобы команда ответом на одну фотографию могла отправить весь альбом.
 
-Мастер `/post` хранит промежуточное состояние админа в `admin_post_drafts`: выбранный режим, статус, время отправки, `payload` предпросмотра и текущий `media_group_id`, если бот ожидает сбор альбома. Перед отправкой или планированием админ подтверждает preview кнопкой.
+Мастер `/post` хранит промежуточное состояние админа в `admin_post_drafts`: выбранный режим, статус, время отправки, `payload` предпросмотра, optional link-buttons и текущий `media_group_id`, если бот ожидает сбор альбома. После контента бот спрашивает кнопки в формате `Текст | https://...`, затем показывает preview; перед отправкой или планированием админ подтверждает preview кнопкой.
 
 Контакт пользователя запрашивается только один раз. Если в `users.contact_received_at` уже есть значение, повторный `/start` или fallback-сообщения не показывают кнопку отправки номера и сразу дают Discord-ссылку.
 

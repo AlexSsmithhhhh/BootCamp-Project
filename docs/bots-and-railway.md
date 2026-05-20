@@ -107,6 +107,7 @@ Admin-команды Telegram:
 - `/admin_help` - список команд.
 - `/post` - основной мастер: пост всем сейчас, рассылка по сегментам или запланировать отправку пользователям бота.
 - `/drop_post`, `drop post`, `дроп пост`, `/new_post`, `/newpost` или `new post` - старые алиасы мастера `/post`.
+- `/manage` - список запланированных отправок с кнопками удаления.
 - `/all_post` или `all post` - список запланированных публикаций.
 - `/delete ID` или `delete ID` - отменить запланированную публикацию.
 - `/analytics` или `analytics` - краткая аналитика Telegram-бота.
@@ -138,12 +139,14 @@ Post wizard:
 2. Bot asks what to do: post to all users now, segmented broadcast, or schedule.
 3. For schedule, admin sends date/time in `YYYY-MM-DD HH:MM`.
 4. Bot asks for content; admin sends text, photo, photo album, video, or PDF/document.
-5. Bot saves the draft payload in `admin_post_drafts.payload` and shows a preview.
-6. Admin confirms with `Отправить`/`Запланировать`, edits with `Редактировать`, or cancels with `Отменить`.
-7. `/all_post` shows scheduled jobs and `/delete ID` cancels a scheduled job.
+5. Bot asks for optional link buttons. Format: `Button text | https://example.com`, one button per line, up to 100 buttons.
+6. Bot saves the draft payload in `admin_post_drafts.payload` and shows a preview.
+7. Admin confirms with `Отправить`/`Запланировать`, edits with `Редактировать`, or cancels with `Отменить`.
+8. `/manage` shows scheduled jobs and delete buttons; `/all_post` and `/delete ID` remain available.
 
 The `/post` wizard sends to active users of the bot and does not require `TELEGRAM_CHANNEL_ID`.
 The segmented broadcast option is reserved for future tag/segment targeting and currently only explains that the audience selector is not available yet.
+For photo albums, Telegram does not support inline keyboards on the media group itself; if buttons are present, the bot sends a separate `Ссылки к посту:` message with the same link keyboard.
 
 Contact gate:
 

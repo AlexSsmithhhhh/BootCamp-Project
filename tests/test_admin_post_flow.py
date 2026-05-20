@@ -13,6 +13,9 @@ from app.admin import (
     confirm_admin_post_draft,
     execute_direct_media_action,
     new_post_keyboard,
+    parse_link_buttons_input,
+    send_manage_jobs,
+    send_payload_to_chat,
     start_admin_post_preview_from_payload,
     start_admin_post_wizard,
 )
@@ -23,9 +26,11 @@ from app.storage import EventStorage
 class FakeBot:
     def __init__(self) -> None:
         self.sent_messages: list[tuple[str | int, str]] = []
+        self.message_kwargs: list[dict] = []
 
-    async def send_message(self, chat_id: str | int, text: str):
+    async def send_message(self, chat_id: str | int, text: str, **kwargs):
         self.sent_messages.append((chat_id, text))
+        self.message_kwargs.append(kwargs)
         return SimpleNamespace(message_id=len(self.sent_messages))
 
 
@@ -104,6 +109,21 @@ class AdminPostFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Рассылка по сегментам", labels)
         self.assertIn("Запланировать", labels)
 
+    def test_parses_link_buttons_input(self) -> None:
+        parsed = parse_link_buttons_input(
+            "Discord | https://discord.gg/test\n"
+            "Site https://example.com"
+        )
+
+        self.assertIsNone(parsed["error"])
+        self.assertEqual(
+            parsed["buttons"],
+            [
+                {"text": "Discord", "url": "https://discord.gg/test"},
+                {"text": "Site", "url": "https://example.com"},
+            ],
+        )
+
     async def test_post_payload_creates_preview_without_publishing(self) -> None:
         with TemporaryDirectory() as tmp_dir:
             storage = EventStorage(Path(tmp_dir) / "bot.sqlite3")
@@ -122,9 +142,9 @@ class AdminPostFlowTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(bot.sent_messages, [])
         self.assertIsNotNone(draft)
-        self.assertEqual(draft["status"], "awaiting_confirm")
+        self.assertEqual(draft["status"], "awaiting_buttons")
         self.assertIn("Needs review", draft["payload"])
-        self.assertIn("Needs review", message.answers[-1])
+        self.assertIn("Кнопки", message.answers[-1])
 
     async def test_media_caption_post_creates_preview_without_publishing(self) -> None:
         with TemporaryDirectory() as tmp_dir:
@@ -146,7 +166,7 @@ class AdminPostFlowTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(bot.sent_messages, [])
         self.assertIsNotNone(draft)
-        self.assertEqual(draft["status"], "awaiting_confirm")
+        self.assertEqual(draft["status"], "awaiting_buttons")
         self.assertIn("Caption command", draft["payload"])
 
     async def test_confirm_now_broadcasts_payload_and_clears_draft(self) -> None:
@@ -215,6 +235,48 @@ class AdminPostFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(jobs[0]["job_type"], "broadcast")
         self.assertIsNone(jobs[0]["target_chat_id"])
         self.assertIn("ID", responder.answers[-1])
+
+    async def test_send_payload_attaches_link_buttons(self) -> None:
+        bot = FakeBot()
+
+        await send_payload_to_chat(
+            bot,
+            2001,
+            {
+                "kind": "text",
+                "text": "Hello with buttons",
+                "buttons": [{"text": "Open", "url": "https://example.com"}],
+            },
+        )
+
+        keyboard = bot.message_kwargs[0]["reply_markup"]
+        self.assertEqual(bot.sent_messages, [(2001, "Hello with buttons")])
+        self.assertEqual(keyboard.inline_keyboard[0][0].text, "Open")
+        self.assertEqual(keyboard.inline_keyboard[0][0].url, "https://example.com")
+
+    async def test_manage_lists_jobs_with_delete_buttons(self) -> None:
+        scheduled_at = datetime(2026, 5, 20, 14, 0, tzinfo=timezone.utc)
+        with TemporaryDirectory() as tmp_dir:
+            storage = EventStorage(Path(tmp_dir) / "bot.sqlite3")
+            await storage.init()
+            job_id = await storage.create_scheduled_job(
+                job_type="broadcast",
+                text="Manage me",
+                payload={"kind": "text", "text": "Manage me"},
+                scheduled_at=scheduled_at,
+                created_by=1001,
+            )
+            responder = FakeResponder()
+
+            await send_manage_jobs(responder, storage)
+
+        keyboard = responder.answer_kwargs[-1]["reply_markup"]
+        callbacks = [
+            button.callback_data
+            for row in keyboard.inline_keyboard
+            for button in row
+        ]
+        self.assertIn(f"admin_manage_delete:{job_id}", callbacks)
 
 
 if __name__ == "__main__":

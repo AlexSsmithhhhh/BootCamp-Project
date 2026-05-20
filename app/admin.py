@@ -20,11 +20,14 @@ Payload = dict[str, Any]
 ADMIN_POST_CONFIRM_CALLBACK = "admin_post_confirm"
 ADMIN_POST_EDIT_CALLBACK = "admin_post_edit"
 ADMIN_POST_CANCEL_CALLBACK = "admin_post_cancel"
+ADMIN_POST_SKIP_BUTTONS_CALLBACK = "admin_post_skip_buttons"
 ADMIN_POST_NOW_CALLBACK = "admin_post_now"
 ADMIN_POST_BROADCAST_CALLBACK = "admin_post_broadcast"
 ADMIN_POST_SCHEDULE_CALLBACK = "admin_post_schedule"
+ADMIN_MANAGE_DELETE_PREFIX = "admin_manage_delete:"
 BROADCAST_NOW_MODES = {"broadcast_now", "now"}
 BROADCAST_SCHEDULED_MODES = {"broadcast_scheduled", "scheduled"}
+MAX_LINK_BUTTONS = 100
 
 
 class AdminOnly(BaseFilter):
@@ -184,6 +187,7 @@ def admin_commands(router) -> None:
                     "<b>Admin-команды</b>",
                     "/post - мастер: пост всем сейчас, рассылка по сегментам или запланировать",
                     "/drop_post или /new_post - старые алиасы мастера /post",
+                    "/manage - управлять запланированными отправками",
                     "/all_post или all post - все запланированные посты",
                     "/delete ID или delete ID - отменить запланированный пост",
                     "/analytics или analytics - аналитика Telegram-бота",
@@ -276,6 +280,7 @@ def admin_commands(router) -> None:
                 ADMIN_POST_CONFIRM_CALLBACK,
                 ADMIN_POST_EDIT_CALLBACK,
                 ADMIN_POST_CANCEL_CALLBACK,
+                ADMIN_POST_SKIP_BUTTONS_CALLBACK,
             }
         )
     )
@@ -295,6 +300,23 @@ def admin_commands(router) -> None:
         if callback.data == ADMIN_POST_CANCEL_CALLBACK:
             await storage.clear_admin_post_draft(callback.from_user.id)
             await callback.message.answer("Публикация отменена.")
+            await callback.answer()
+            return
+
+        if callback.data == ADMIN_POST_SKIP_BUTTONS_CALLBACK:
+            draft = await storage.admin_post_draft(callback.from_user.id)
+            payload = payload_from_draft(draft) if draft else None
+            if draft is None or payload is None:
+                await callback.message.answer("Активного черновика нет. Начни заново: /post")
+                await callback.answer()
+                return
+            await save_admin_post_preview(
+                message=callback.message,
+                storage=storage,
+                draft=draft,
+                payload=payload,
+                admin_id=callback.from_user.id,
+            )
             await callback.answer()
             return
 
@@ -334,6 +356,42 @@ def admin_commands(router) -> None:
             await deny_non_admin(message)
             return
         await send_scheduled_jobs(message, storage)
+
+    @router.message(Command("manage"))
+    @router.message(TextCommand("manage"))
+    @router.message(F.text.regexp(r"^\s*/?manage(?:@\w+)?\s*$"))
+    async def handle_manage(message: Message, storage: EventStorage, settings: Settings) -> None:
+        if not is_admin(message, settings):
+            await deny_non_admin(message)
+            return
+        await send_manage_jobs(message, storage)
+
+    @router.callback_query(F.data.regexp(r"^admin_manage_delete:\d+$"))
+    async def handle_manage_delete(
+        callback: CallbackQuery,
+        storage: EventStorage,
+        settings: Settings,
+    ) -> None:
+        if not is_admin_identity(callback.from_user.id, callback.from_user.username, settings):
+            await callback.answer("Доступно только администратору.", show_alert=True)
+            return
+        if callback.message is None or callback.data is None:
+            await callback.answer("Не могу продолжить здесь.", show_alert=True)
+            return
+        job_id = parse_int(callback.data.removeprefix(ADMIN_MANAGE_DELETE_PREFIX))
+        if job_id is None:
+            await callback.answer("Не понял ID.", show_alert=True)
+            return
+        if await storage.cancel_scheduled_job(job_id):
+            try:
+                await callback.message.edit_reply_markup(reply_markup=None)
+            except TelegramBadRequest:
+                pass
+            await callback.message.answer(f"Задание <code>{job_id}</code> удалено.")
+            await send_manage_jobs(callback.message, storage)
+            await callback.answer()
+            return
+        await callback.answer("Задание уже не активно или не найдено.", show_alert=True)
 
     @router.message(Command("delete"))
     async def handle_delete_command(
@@ -595,6 +653,25 @@ def admin_commands(router) -> None:
             )
             return
 
+        if draft["status"] == "awaiting_buttons":
+            payload = payload_from_draft(draft)
+            if payload is None:
+                await message.answer("Не нашел контент черновика. Начни заново: /post")
+                await storage.clear_admin_post_draft(message.from_user.id)
+                return
+            parsed_buttons = parse_link_buttons_input(message.text)
+            if parsed_buttons["error"]:
+                await message.answer(parsed_buttons["error"])
+                return
+            payload = payload_with_buttons(payload, parsed_buttons["buttons"])
+            await save_admin_post_preview(
+                message=message,
+                storage=storage,
+                draft=draft,
+                payload=payload,
+            )
+            return
+
         if draft["status"] == "awaiting_confirm":
             await message.answer(
                 "Черновик уже готов. Используй кнопки под предпросмотром: "
@@ -676,6 +753,30 @@ def admin_post_preview_keyboard(mode: str) -> InlineKeyboardMarkup:
     )
 
 
+def admin_post_buttons_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Без кнопок",
+                    callback_data=ADMIN_POST_SKIP_BUTTONS_CALLBACK,
+                )
+            ]
+        ]
+    )
+
+
+def link_buttons_keyboard(buttons: list[dict[str, str]]) -> Optional[InlineKeyboardMarkup]:
+    if not buttons:
+        return None
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=button["text"], url=button["url"])]
+            for button in buttons
+        ]
+    )
+
+
 def missing_channel_setup_message() -> str:
     return "\n".join(
         [
@@ -729,7 +830,7 @@ async def start_admin_post_preview_from_payload(
         return
 
     await storage.ensure_user(message.from_user)
-    await save_admin_post_preview(
+    await ask_admin_post_buttons(
         message=message,
         storage=storage,
         draft={"mode": "broadcast_now"},
@@ -749,6 +850,34 @@ async def send_scheduled_jobs(message: Message, storage: EventStorage) -> None:
             f"ID <code>{job['id']}</code> · {job['job_type']} · {job['scheduled_at']}\n{preview}"
         )
     await message.answer("\n\n".join(lines))
+
+
+async def send_manage_jobs(message: Message, storage: EventStorage) -> None:
+    jobs = await storage.list_scheduled_jobs(limit=30)
+    if not jobs:
+        await message.answer("Запланированных отправок нет.")
+        return
+
+    lines = ["<b>Управление запланированными отправками</b>"]
+    keyboard_rows = []
+    for job in jobs:
+        preview = escape(payload_preview(payload_from_job(job))[:140])
+        lines.append(
+            f"ID <code>{job['id']}</code> · {job['job_type']} · {job['scheduled_at']}\n{preview}"
+        )
+        keyboard_rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"Удалить {job['id']}",
+                    callback_data=f"{ADMIN_MANAGE_DELETE_PREFIX}{job['id']}",
+                )
+            ]
+        )
+
+    await message.answer(
+        "\n\n".join(lines),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard_rows),
+    )
 
 
 async def delete_scheduled_job_from_text(
@@ -791,6 +920,35 @@ def payload_from_draft(draft: dict[str, Any]) -> Optional[Payload]:
     return None
 
 
+def payload_buttons(payload: str | Payload) -> list[dict[str, str]]:
+    normalized_payload = normalize_payload(payload)
+    buttons = normalized_payload.get("buttons")
+    if not isinstance(buttons, list):
+        return []
+    normalized_buttons = []
+    for button in buttons:
+        if not isinstance(button, dict):
+            continue
+        raw_text = button.get("text")
+        raw_url = button.get("url")
+        if not isinstance(raw_text, str) or not isinstance(raw_url, str):
+            continue
+        text = parse_required_text(raw_text)
+        url = parse_required_text(raw_url)
+        if text and url:
+            normalized_buttons.append({"text": text, "url": url})
+    return normalized_buttons
+
+
+def payload_with_buttons(payload: Payload, buttons: list[dict[str, str]]) -> Payload:
+    updated_payload = dict(payload)
+    if buttons:
+        updated_payload["buttons"] = buttons
+    else:
+        updated_payload.pop("buttons", None)
+    return updated_payload
+
+
 def format_admin_post_preview(draft: dict[str, Any], payload: Payload) -> str:
     mode = "сейчас" if draft["mode"] in BROADCAST_NOW_MODES else "запланировано"
     lines = [
@@ -806,6 +964,9 @@ def format_admin_post_preview(draft: dict[str, Any], payload: Payload) -> str:
             "<b>Контент</b>",
             escape(payload_preview(payload)[:1200]),
             "",
+            "<b>Кнопки</b>",
+            format_link_buttons_preview(payload_buttons(payload)),
+            "",
             "Проверь сообщение и выбери действие ниже.",
         ]
     )
@@ -818,30 +979,61 @@ async def save_admin_post_preview(
     storage: EventStorage,
     draft: dict[str, Any],
     payload: Payload,
+    admin_id: Optional[int] = None,
 ) -> None:
-    if message.from_user is None:
+    target_admin_id = admin_id
+    if target_admin_id is None and message.from_user is not None:
+        target_admin_id = message.from_user.id
+    if target_admin_id is None:
         return
 
     scheduled_at = parse_stored_datetime(draft.get("scheduled_at"))
     if draft["mode"] in BROADCAST_SCHEDULED_MODES and scheduled_at is None:
         await message.answer("Не нашел время отправки. Начни заново: /post")
-        await storage.clear_admin_post_draft(message.from_user.id)
+        await storage.clear_admin_post_draft(target_admin_id)
         return
 
     await storage.save_admin_post_draft(
-        admin_id=message.from_user.id,
+        admin_id=target_admin_id,
         mode=draft["mode"],
         status="awaiting_confirm",
         scheduled_at=scheduled_at,
         media_group_id=draft.get("media_group_id"),
         payload=payload,
     )
-    preview_draft = await storage.admin_post_draft(message.from_user.id)
+    preview_draft = await storage.admin_post_draft(target_admin_id)
     if preview_draft is None:
         preview_draft = draft | {"status": "awaiting_confirm"}
     await message.answer(
         format_admin_post_preview(preview_draft, payload),
         reply_markup=admin_post_preview_keyboard(draft["mode"]),
+    )
+
+
+async def ask_admin_post_buttons(
+    *,
+    message: Message,
+    storage: EventStorage,
+    draft: dict[str, Any],
+    payload: Payload,
+) -> None:
+    if message.from_user is None:
+        return
+    scheduled_at = parse_stored_datetime(draft.get("scheduled_at"))
+    await storage.save_admin_post_draft(
+        admin_id=message.from_user.id,
+        mode=draft["mode"],
+        status="awaiting_buttons",
+        scheduled_at=scheduled_at,
+        media_group_id=draft.get("media_group_id"),
+        payload=payload,
+    )
+    await message.answer(
+        "Кнопки под постом нужны?\n\n"
+        "Если да, пришли каждую кнопку с новой строки в формате:\n"
+        "<code>Текст кнопки | https://example.com</code>\n\n"
+        f"Можно добавить до {MAX_LINK_BUTTONS} кнопок. Если кнопки не нужны, нажми <b>Без кнопок</b>.",
+        reply_markup=admin_post_buttons_keyboard(),
     )
 
 
@@ -975,7 +1167,7 @@ async def finish_admin_post_draft(
     if message.from_user is None:
         return
     if draft["mode"] in BROADCAST_NOW_MODES | BROADCAST_SCHEDULED_MODES:
-        await save_admin_post_preview(
+        await ask_admin_post_buttons(
             message=message,
             storage=storage,
             draft=draft,
@@ -1189,14 +1381,17 @@ async def send_payload_to_chat(
 ) -> list[Message]:
     normalized_payload = normalize_payload(payload)
     kind = normalized_payload["kind"]
+    buttons = payload_buttons(normalized_payload)
+    reply_markup = link_buttons_keyboard(buttons)
     if kind == "text":
-        sent = await bot.send_message(chat_id, normalized_payload["text"])
+        sent = await bot.send_message(chat_id, normalized_payload["text"], reply_markup=reply_markup)
         return [sent]
     if kind == "photo":
         sent = await bot.send_photo(
             chat_id,
             photo=normalized_payload["file_id"],
             caption=normalized_payload.get("caption"),
+            reply_markup=reply_markup,
         )
         return [sent]
     if kind == "video":
@@ -1204,6 +1399,7 @@ async def send_payload_to_chat(
             chat_id,
             video=normalized_payload["file_id"],
             caption=normalized_payload.get("caption"),
+            reply_markup=reply_markup,
         )
         return [sent]
     if kind == "document":
@@ -1211,6 +1407,7 @@ async def send_payload_to_chat(
             chat_id,
             document=normalized_payload["file_id"],
             caption=normalized_payload.get("caption"),
+            reply_markup=reply_markup,
         )
         return [sent]
     if kind == "media_group":
@@ -1218,7 +1415,11 @@ async def send_payload_to_chat(
             InputMediaPhoto(media=item["file_id"], caption=item.get("caption"))
             for item in normalized_payload["items"]
         ]
-        return await bot.send_media_group(chat_id, media=media)
+        sent_messages = await bot.send_media_group(chat_id, media=media)
+        if reply_markup is not None:
+            link_message = await bot.send_message(chat_id, "Ссылки к посту:", reply_markup=reply_markup)
+            sent_messages.append(link_message)
+        return sent_messages
     raise ValueError(f"Unsupported payload kind: {kind}")
 
 
@@ -1259,6 +1460,81 @@ def payload_preview(payload: str | Payload) -> str:
             first_caption = parse_required_text(items[0].get("caption"))
         return f"[photo album: {len(items)}] {first_caption or ''}".strip()
     return f"[{kind}]"
+
+
+def format_link_buttons_preview(buttons: list[dict[str, str]]) -> str:
+    if not buttons:
+        return "без кнопок"
+    return "\n".join(
+        f"• {escape(button['text'])} → {escape(button['url'])}"
+        for button in buttons
+    )
+
+
+def parse_link_buttons_input(value: Optional[str]) -> dict[str, Any]:
+    text = parse_required_text(value)
+    if text is None:
+        return {"buttons": [], "error": button_input_help("Пришли кнопки текстом или нажми «Без кнопок».")}
+    if text.lower() in {"без кнопок", "без", "нет", "no", "skip"}:
+        return {"buttons": [], "error": None}
+
+    buttons = []
+    for line_number, raw_line in enumerate(text.splitlines(), start=1):
+        line = raw_line.strip()
+        if not line:
+            continue
+        parsed = parse_link_button_line(line)
+        if parsed is None:
+            return {
+                "buttons": [],
+                "error": button_input_help(
+                    f"Не понял кнопку в строке {line_number}: <code>{escape(line)}</code>"
+                ),
+            }
+        buttons.append(parsed)
+
+    if not buttons:
+        return {"buttons": [], "error": button_input_help("Не нашел ни одной кнопки.")}
+    if len(buttons) > MAX_LINK_BUTTONS:
+        return {
+            "buttons": [],
+            "error": f"Слишком много кнопок. Максимум: {MAX_LINK_BUTTONS}.",
+        }
+    return {"buttons": buttons, "error": None}
+
+
+def parse_link_button_line(line: str) -> Optional[dict[str, str]]:
+    if "|" in line:
+        label, url = line.split("|", 1)
+        label = label.strip()
+        url = url.strip()
+    else:
+        marker = "http://"
+        index = line.find(marker)
+        https_index = line.find("https://")
+        if https_index >= 0 and (index < 0 or https_index < index):
+            marker = "https://"
+            index = https_index
+        if index < 0:
+            return None
+        label = line[:index].strip(" -—|")
+        url = line[index:].strip()
+
+    if not label or not is_http_url(url) or any(char.isspace() for char in url):
+        return None
+    return {"text": label[:64], "url": url[:2048]}
+
+
+def button_input_help(prefix: str) -> str:
+    return (
+        f"{prefix}\n\n"
+        "Формат каждой строки:\n"
+        "<code>Текст кнопки | https://example.com</code>"
+    )
+
+
+def is_http_url(value: str) -> bool:
+    return value.startswith("https://") or value.startswith("http://")
 
 
 def require_channel_id(settings: Settings) -> Optional[str | int]:
