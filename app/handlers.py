@@ -12,7 +12,6 @@ from app.storage import EventStorage
 
 
 router = Router()
-admin_commands(router)
 known_contact_user_ids: set[int] = set()
 logger = logging.getLogger(__name__)
 CONTACT_PROMPT_COOLDOWN_SECONDS = 6 * 60 * 60
@@ -157,6 +156,9 @@ async def handle_contact(
         content.DISCORD_LINK_MESSAGE,
         reply_markup=discord_url_keyboard(settings.discord_invite_url),
     )
+
+
+admin_commands(router)
 
 
 @router.message()
