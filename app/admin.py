@@ -20,6 +20,11 @@ Payload = dict[str, Any]
 ADMIN_POST_CONFIRM_CALLBACK = "admin_post_confirm"
 ADMIN_POST_EDIT_CALLBACK = "admin_post_edit"
 ADMIN_POST_CANCEL_CALLBACK = "admin_post_cancel"
+ADMIN_POST_NOW_CALLBACK = "admin_post_now"
+ADMIN_POST_BROADCAST_CALLBACK = "admin_post_broadcast"
+ADMIN_POST_SCHEDULE_CALLBACK = "admin_post_schedule"
+BROADCAST_NOW_MODES = {"broadcast_now", "now"}
+BROADCAST_SCHEDULED_MODES = {"broadcast_scheduled", "scheduled"}
 
 
 class AdminOnly(BaseFilter):
@@ -177,14 +182,13 @@ def admin_commands(router) -> None:
             "\n".join(
                 [
                     "<b>Admin-команды</b>",
-                    "/drop_post или drop post - мастер создания поста",
-                    "/new_post или new post - старый алиас мастера",
+                    "/post - мастер: пост сейчас, рассылка сейчас или запланировать",
+                    "/drop_post или /new_post - старые алиасы мастера /post",
                     "/all_post или all post - все запланированные посты",
                     "/delete ID или delete ID - отменить запланированный пост",
                     "/analytics или analytics - аналитика Telegram-бота",
-                    "/post текст - создать preview и отправить в канал только после подтверждения",
-                    "/post без текста - открыть мастер создания поста",
-                    "/post ответом на фото/альбом/видео/PDF создает preview этого медиа",
+                    "/post текст - создать preview и отправить пользователям бота после подтверждения",
+                    "/post ответом на фото/альбом/видео/PDF создает preview этого медиа для отправки пользователям",
                     "Фото/видео/PDF с caption `/post текст` тоже идет через preview",
                     "/delete_post message_id - удалить пост из канала",
                     "/broadcast текст - отправить рассылку всем активным пользователям",
@@ -211,7 +215,15 @@ def admin_commands(router) -> None:
             return
         await start_admin_post_wizard(message, storage, settings)
 
-    @router.callback_query(F.data.in_({"admin_post_now", "admin_post_schedule"}))
+    @router.callback_query(
+        F.data.in_(
+            {
+                ADMIN_POST_NOW_CALLBACK,
+                ADMIN_POST_BROADCAST_CALLBACK,
+                ADMIN_POST_SCHEDULE_CALLBACK,
+            }
+        )
+    )
     async def handle_new_post_choice(
         callback: CallbackQuery,
         storage: EventStorage,
@@ -224,27 +236,27 @@ def admin_commands(router) -> None:
             await callback.answer("Не могу продолжить здесь.", show_alert=True)
             return
 
-        if callback.data == "admin_post_now":
+        if callback.data in {ADMIN_POST_NOW_CALLBACK, ADMIN_POST_BROADCAST_CALLBACK}:
             await storage.save_admin_post_draft(
                 admin_id=callback.from_user.id,
-                mode="now",
+                mode="broadcast_now",
                 status="awaiting_content",
             )
             await callback.message.answer(
-                "Ок, готовим публикацию сейчас.\n\n"
+                "Ок, готовим отправку пользователям бота сейчас.\n\n"
                 "Отправь следующим сообщением текст, фото, альбом, видео или PDF. "
-                "Я покажу предпросмотр и попрошу подтвердить перед публикацией."
+                "Я покажу предпросмотр и попрошу подтвердить перед отправкой."
             )
             await callback.answer()
             return
 
         await storage.save_admin_post_draft(
             admin_id=callback.from_user.id,
-            mode="scheduled",
+            mode="broadcast_scheduled",
             status="awaiting_schedule",
         )
         await callback.message.answer(
-            "Укажи дату и время публикации по Киеву в формате <code>YYYY-MM-DD HH:MM</code>.\n"
+            "Укажи дату и время отправки по Киеву в формате <code>YYYY-MM-DD HH:MM</code>.\n"
             "Например: <code>2026-05-20 14:00</code>"
         )
         await callback.answer()
@@ -280,7 +292,7 @@ def admin_commands(router) -> None:
         if callback.data == ADMIN_POST_EDIT_CALLBACK:
             draft = await storage.admin_post_draft(callback.from_user.id)
             if draft is None:
-                await callback.message.answer("Активного черновика нет. Начни заново: /drop_post")
+                await callback.message.answer("Активного черновика нет. Начни заново: /post")
                 await callback.answer()
                 return
             await storage.save_admin_post_draft(
@@ -553,7 +565,7 @@ def admin_commands(router) -> None:
                 return
             await storage.save_admin_post_draft(
                 admin_id=message.from_user.id,
-                mode="scheduled",
+                mode=draft["mode"],
                 status="awaiting_content",
                 scheduled_at=scheduled_at,
             )
@@ -577,7 +589,7 @@ def admin_commands(router) -> None:
         if draft["status"] == "awaiting_confirm":
             await message.answer(
                 "Черновик уже готов. Используй кнопки под предпросмотром: "
-                "опубликовать, редактировать или отменить."
+                "отправить, редактировать или отменить."
             )
 
 
@@ -613,12 +625,18 @@ def new_post_keyboard() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Опубликовать сейчас",
-                    callback_data="admin_post_now",
+                    text="Пост сейчас",
+                    callback_data=ADMIN_POST_NOW_CALLBACK,
                 ),
                 InlineKeyboardButton(
+                    text="Рассылка сейчас",
+                    callback_data=ADMIN_POST_BROADCAST_CALLBACK,
+                ),
+            ],
+            [
+                InlineKeyboardButton(
                     text="Запланировать",
-                    callback_data="admin_post_schedule",
+                    callback_data=ADMIN_POST_SCHEDULE_CALLBACK,
                 ),
             ]
         ]
@@ -626,7 +644,7 @@ def new_post_keyboard() -> InlineKeyboardMarkup:
 
 
 def admin_post_preview_keyboard(mode: str) -> InlineKeyboardMarkup:
-    confirm_text = "Опубликовать" if mode == "now" else "Запланировать"
+    confirm_text = "Отправить" if mode in BROADCAST_NOW_MODES else "Запланировать"
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -676,9 +694,6 @@ async def start_admin_post_wizard(
 ) -> None:
     if message.from_user is None:
         return
-    if require_channel_id(settings) is None:
-        await send_missing_channel_setup(message)
-        return
 
     await storage.ensure_user(message.from_user)
     await storage.save_admin_post_draft(
@@ -687,8 +702,8 @@ async def start_admin_post_wizard(
         status="choosing",
     )
     await message.answer(
-        "Запускаю мастер публикации.\n\n"
-        "Сначала выбери, публикуем сейчас или планируем на конкретное время. "
+        "Запускаю мастер отправки.\n\n"
+        "Выбери, что сделать: пост сейчас, рассылку сейчас или запланировать отправку. "
         "Потом пришли текст, фото, альбом, видео или PDF. Перед отправкой я покажу предпросмотр.",
         reply_markup=new_post_keyboard(),
     )
@@ -703,15 +718,12 @@ async def start_admin_post_preview_from_payload(
 ) -> None:
     if message.from_user is None:
         return
-    if require_channel_id(settings) is None:
-        await send_missing_channel_setup(message)
-        return
 
     await storage.ensure_user(message.from_user)
     await save_admin_post_preview(
         message=message,
         storage=storage,
-        draft={"mode": "now"},
+        draft={"mode": "broadcast_now"},
         payload=payload,
     )
 
@@ -771,12 +783,13 @@ def payload_from_draft(draft: dict[str, Any]) -> Optional[Payload]:
 
 
 def format_admin_post_preview(draft: dict[str, Any], payload: Payload) -> str:
-    mode = "сейчас" if draft["mode"] == "now" else "запланировано"
+    mode = "сейчас" if draft["mode"] in BROADCAST_NOW_MODES else "запланировано"
     lines = [
-        "<b>Предпросмотр поста</b>",
+        "<b>Предпросмотр сообщения</b>",
         f"Режим: <b>{mode}</b>",
+        "Получатели: <b>активные пользователи бота</b>",
     ]
-    if draft["mode"] == "scheduled" and draft.get("scheduled_at"):
+    if draft["mode"] in BROADCAST_SCHEDULED_MODES and draft.get("scheduled_at"):
         lines.append(f"Время: <code>{escape(str(draft['scheduled_at']))}</code>")
     lines.extend(
         [
@@ -784,7 +797,7 @@ def format_admin_post_preview(draft: dict[str, Any], payload: Payload) -> str:
             "<b>Контент</b>",
             escape(payload_preview(payload)[:1200]),
             "",
-            "Проверь пост и выбери действие ниже.",
+            "Проверь сообщение и выбери действие ниже.",
         ]
     )
     return "\n".join(lines)
@@ -801,8 +814,8 @@ async def save_admin_post_preview(
         return
 
     scheduled_at = parse_stored_datetime(draft.get("scheduled_at"))
-    if draft["mode"] == "scheduled" and scheduled_at is None:
-        await message.answer("Не нашел время публикации. Начни заново: /drop_post")
+    if draft["mode"] in BROADCAST_SCHEDULED_MODES and scheduled_at is None:
+        await message.answer("Не нашел время отправки. Начни заново: /post")
         await storage.clear_admin_post_draft(message.from_user.id)
         return
 
@@ -833,58 +846,48 @@ async def confirm_admin_post_draft(
 ) -> None:
     draft = await storage.admin_post_draft(admin_id)
     if draft is None or draft["status"] != "awaiting_confirm":
-        await responder.answer("Активного черновика нет. Начни заново: /drop_post")
+        await responder.answer("Активного черновика нет. Начни заново: /post")
         return
 
     payload = payload_from_draft(draft)
     if payload is None:
-        await responder.answer("Не нашел контент черновика. Начни заново: /drop_post")
+        await responder.answer("Не нашел контент черновика. Начни заново: /post")
         await storage.clear_admin_post_draft(admin_id)
         return
 
-    channel_id = require_channel_id(settings)
-    if channel_id is None:
-        await responder.answer(missing_channel_setup_message())
-        return
-
-    if draft["mode"] == "now":
-        sent_messages = await send_payload_to_chat(bot, channel_id, payload)
-        first_message_id = sent_messages[0].message_id if sent_messages else None
+    if draft["mode"] in BROADCAST_NOW_MODES:
+        result = await send_broadcast(bot, storage, payload)
         await storage.add_event(
             admin_id,
-            "admin_channel_post_sent",
+            "admin_broadcast_sent",
             {
-                "message_id": first_message_id,
                 "payload_kind": payload["kind"],
-                "drop_post_flow": True,
+                "post_wizard": True,
+                **result,
             },
         )
         await storage.clear_admin_post_draft(admin_id)
-        await responder.answer(
-            "Пост опубликован. "
-            f"Message ID: <code>{first_message_id}</code>"
-        )
+        await responder.answer(format_broadcast_result(result))
         return
 
-    if draft["mode"] == "scheduled":
+    if draft["mode"] in BROADCAST_SCHEDULED_MODES:
         scheduled_at = parse_stored_datetime(draft.get("scheduled_at"))
         if scheduled_at is None:
-            await responder.answer("Не нашел время публикации. Начни заново: /drop_post")
+            await responder.answer("Не нашел время отправки. Начни заново: /post")
             await storage.clear_admin_post_draft(admin_id)
             return
         job_id = await storage.create_scheduled_job(
-            job_type="channel_post",
+            job_type="broadcast",
             text=payload_preview(payload),
             payload=payload,
-            target_chat_id=str(channel_id),
             scheduled_at=scheduled_at,
             created_by=admin_id,
         )
         await storage.clear_admin_post_draft(admin_id)
-        await responder.answer(f"Пост запланирован. ID: <code>{job_id}</code>")
+        await responder.answer(f"Рассылка запланирована. ID: <code>{job_id}</code>")
         return
 
-    await responder.answer("Не понял режим публикации. Начни заново: /drop_post")
+    await responder.answer("Не понял режим отправки. Начни заново: /post")
     await storage.clear_admin_post_draft(admin_id)
 
 
@@ -914,7 +917,7 @@ async def execute_draft_media_group_action(
         if item["media_type"] == "photo"
     ]
     if not photo_items:
-        await message.answer("Не удалось собрать альбом для публикации.")
+        await message.answer("Не удалось собрать альбом для отправки.")
         await storage.clear_admin_post_draft(admin_id)
         return
 
@@ -962,7 +965,7 @@ async def finish_admin_post_draft(
 ) -> None:
     if message.from_user is None:
         return
-    if draft["mode"] in {"now", "scheduled"}:
+    if draft["mode"] in BROADCAST_NOW_MODES | BROADCAST_SCHEDULED_MODES:
         await save_admin_post_preview(
             message=message,
             storage=storage,
@@ -971,7 +974,7 @@ async def finish_admin_post_draft(
         )
         return
 
-    await message.answer("Не понял режим публикации. Начни заново: /drop_post")
+    await message.answer("Не понял режим отправки. Начни заново: /post")
     await storage.clear_admin_post_draft(message.from_user.id)
 
 

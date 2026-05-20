@@ -105,14 +105,13 @@ railway.cmd logs --service "bootcamp-discord-bot" --environment "production" --l
 Admin-команды Telegram:
 
 - `/admin_help` - список команд.
-- `/drop_post`, `drop post` или `дроп пост` - основной мастер создания поста.
-- `/new_post`, `/newpost` или `new post` - старые алиасы мастера создания поста.
+- `/post` - основной мастер: пост сейчас, рассылка сейчас или запланировать отправку пользователям бота.
+- `/drop_post`, `drop post`, `дроп пост`, `/new_post`, `/newpost` или `new post` - старые алиасы мастера `/post`.
 - `/all_post` или `all post` - список запланированных публикаций.
 - `/delete ID` или `delete ID` - отменить запланированную публикацию.
 - `/analytics` или `analytics` - краткая аналитика Telegram-бота.
-- `/post текст` - создать preview и отправить пост в `TELEGRAM_CHANNEL_ID` только после подтверждения.
-- `/post` без текста - открыть мастер создания поста.
-- `/post` ответом на фото/альбом/видео/PDF - создать preview этого медиа и отправить только после подтверждения.
+- `/post текст` - создать preview и отправить пользователям бота только после подтверждения.
+- `/post` ответом на фото/альбом/видео/PDF - создать preview этого медиа и отправить пользователям бота только после подтверждения.
 - Фото/видео/PDF с caption `/post текст` - создать preview медиа с подписью, без отдельной команды.
 - `/delete_post message_id` - удалить пост из канала.
 - `/broadcast текст` - сразу отправить рассылку всем активным пользователям.
@@ -133,17 +132,17 @@ Media workflow:
 4. Caption самого медиа может начинаться с `/post текст` или `/broadcast текст`: `/post` идет через preview/confirm, `/broadcast` сразу запускает рассылку.
 5. Альбомы кешируются в SQLite table `admin_media_cache`, а готовый payload для отложенной отправки хранится в `scheduled_jobs.payload`.
 
-Drop post wizard:
+Post wizard:
 
-1. Admin writes `/drop_post`, `drop post`, `дроп пост`, `/new_post`, `/newpost` or `new post`.
-2. Bot asks whether to publish now or schedule.
+1. Admin writes `/post` or uses an old alias: `/drop_post`, `drop post`, `дроп пост`, `/new_post`, `/newpost` or `new post`.
+2. Bot asks what to do: post now, broadcast now, or schedule.
 3. For schedule, admin sends date/time in `YYYY-MM-DD HH:MM`.
 4. Bot asks for content; admin sends text, photo, photo album, video, or PDF/document.
 5. Bot saves the draft payload in `admin_post_drafts.payload` and shows a preview.
-6. Admin confirms with `Опубликовать`/`Запланировать`, edits with `Редактировать`, or cancels with `Отменить`.
+6. Admin confirms with `Отправить`/`Запланировать`, edits with `Редактировать`, or cancels with `Отменить`.
 7. `/all_post` shows scheduled jobs and `/delete ID` cancels a scheduled job.
 
-If `TELEGRAM_CHANNEL_ID` is missing, the wizard shows setup instructions instead of a short technical error. The bot must be an admin in the target Telegram channel.
+The `/post` wizard sends to active users of the bot and does not require `TELEGRAM_CHANNEL_ID`.
 
 Contact gate:
 
