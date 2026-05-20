@@ -12,6 +12,7 @@ from app.admin import (
     build_message_payload,
     confirm_admin_post_draft,
     execute_direct_media_action,
+    new_post_keyboard,
     start_admin_post_preview_from_payload,
     start_admin_post_wizard,
 )
@@ -89,6 +90,19 @@ class AdminPostFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("admin_post_now", callbacks)
         self.assertIn("admin_post_broadcast", callbacks)
         self.assertIn("admin_post_schedule", callbacks)
+
+    def test_post_keyboard_distinguishes_all_users_and_segments(self) -> None:
+        keyboard = new_post_keyboard()
+
+        labels = [
+            button.text
+            for row in keyboard.inline_keyboard
+            for button in row
+        ]
+
+        self.assertIn("Пост всем сейчас", labels)
+        self.assertIn("Рассылка по сегментам", labels)
+        self.assertIn("Запланировать", labels)
 
     async def test_post_payload_creates_preview_without_publishing(self) -> None:
         with TemporaryDirectory() as tmp_dir:

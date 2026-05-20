@@ -105,7 +105,7 @@ railway.cmd logs --service "bootcamp-discord-bot" --environment "production" --l
 Admin-команды Telegram:
 
 - `/admin_help` - список команд.
-- `/post` - основной мастер: пост сейчас, рассылка сейчас или запланировать отправку пользователям бота.
+- `/post` - основной мастер: пост всем сейчас, рассылка по сегментам или запланировать отправку пользователям бота.
 - `/drop_post`, `drop post`, `дроп пост`, `/new_post`, `/newpost` или `new post` - старые алиасы мастера `/post`.
 - `/all_post` или `all post` - список запланированных публикаций.
 - `/delete ID` или `delete ID` - отменить запланированную публикацию.
@@ -135,7 +135,7 @@ Media workflow:
 Post wizard:
 
 1. Admin writes `/post` or uses an old alias: `/drop_post`, `drop post`, `дроп пост`, `/new_post`, `/newpost` or `new post`.
-2. Bot asks what to do: post now, broadcast now, or schedule.
+2. Bot asks what to do: post to all users now, segmented broadcast, or schedule.
 3. For schedule, admin sends date/time in `YYYY-MM-DD HH:MM`.
 4. Bot asks for content; admin sends text, photo, photo album, video, or PDF/document.
 5. Bot saves the draft payload in `admin_post_drafts.payload` and shows a preview.
@@ -143,6 +143,7 @@ Post wizard:
 7. `/all_post` shows scheduled jobs and `/delete ID` cancels a scheduled job.
 
 The `/post` wizard sends to active users of the bot and does not require `TELEGRAM_CHANNEL_ID`.
+The segmented broadcast option is reserved for future tag/segment targeting and currently only explains that the audience selector is not available yet.
 
 Contact gate:
 

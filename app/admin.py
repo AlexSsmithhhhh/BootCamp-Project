@@ -182,7 +182,7 @@ def admin_commands(router) -> None:
             "\n".join(
                 [
                     "<b>Admin-команды</b>",
-                    "/post - мастер: пост сейчас, рассылка сейчас или запланировать",
+                    "/post - мастер: пост всем сейчас, рассылка по сегментам или запланировать",
                     "/drop_post или /new_post - старые алиасы мастера /post",
                     "/all_post или all post - все запланированные посты",
                     "/delete ID или delete ID - отменить запланированный пост",
@@ -236,14 +236,23 @@ def admin_commands(router) -> None:
             await callback.answer("Не могу продолжить здесь.", show_alert=True)
             return
 
-        if callback.data in {ADMIN_POST_NOW_CALLBACK, ADMIN_POST_BROADCAST_CALLBACK}:
+        if callback.data == ADMIN_POST_BROADCAST_CALLBACK:
+            await callback.message.answer(
+                "Рассылка по сегментам пока зарезервирована под будущие теги и сегменты.\n\n"
+                "Сейчас для отправки всем активным пользователям выбери <b>Пост всем сейчас</b>. "
+                "Когда добавим сегменты, здесь будет выбор аудитории перед контентом и preview."
+            )
+            await callback.answer()
+            return
+
+        if callback.data == ADMIN_POST_NOW_CALLBACK:
             await storage.save_admin_post_draft(
                 admin_id=callback.from_user.id,
                 mode="broadcast_now",
                 status="awaiting_content",
             )
             await callback.message.answer(
-                "Ок, готовим отправку пользователям бота сейчас.\n\n"
+                "Ок, готовим пост всем активным пользователям бота.\n\n"
                 "Отправь следующим сообщением текст, фото, альбом, видео или PDF. "
                 "Я покажу предпросмотр и попрошу подтвердить перед отправкой."
             )
@@ -625,11 +634,11 @@ def new_post_keyboard() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Пост сейчас",
+                    text="Пост всем сейчас",
                     callback_data=ADMIN_POST_NOW_CALLBACK,
                 ),
                 InlineKeyboardButton(
-                    text="Рассылка сейчас",
+                    text="Рассылка по сегментам",
                     callback_data=ADMIN_POST_BROADCAST_CALLBACK,
                 ),
             ],
@@ -703,7 +712,7 @@ async def start_admin_post_wizard(
     )
     await message.answer(
         "Запускаю мастер отправки.\n\n"
-        "Выбери, что сделать: пост сейчас, рассылку сейчас или запланировать отправку. "
+        "Выбери, что сделать: пост всем сейчас, рассылку по сегментам или запланировать отправку. "
         "Потом пришли текст, фото, альбом, видео или PDF. Перед отправкой я покажу предпросмотр.",
         reply_markup=new_post_keyboard(),
     )
