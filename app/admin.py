@@ -182,10 +182,10 @@ def admin_commands(router) -> None:
                     "/all_post или all post - все запланированные посты",
                     "/delete ID или delete ID - отменить запланированный пост",
                     "/analytics или analytics - аналитика Telegram-бота",
-                    "/post текст - сразу опубликовать текст в канал",
+                    "/post текст - создать preview и отправить в канал только после подтверждения",
                     "/post без текста - открыть мастер создания поста",
-                    "/post ответом на фото/альбом/видео/PDF публикует это медиа",
-                    "Фото/видео/PDF с caption `/post текст` публикуется сразу",
+                    "/post ответом на фото/альбом/видео/PDF создает preview этого медиа",
+                    "Фото/видео/PDF с caption `/post текст` тоже идет через preview",
                     "/delete_post message_id - удалить пост из канала",
                     "/broadcast текст - отправить рассылку всем активным пользователям",
                     "/broadcast - ответом на медиа отправляет медиа-рассылку",
@@ -355,7 +355,6 @@ def admin_commands(router) -> None:
     async def handle_post(
         message: Message,
         command: CommandObject,
-        bot: Bot,
         storage: EventStorage,
         settings: Settings,
     ) -> None:
@@ -366,26 +365,11 @@ def admin_commands(router) -> None:
         if payload is None:
             await start_admin_post_wizard(message, storage, settings)
             return
-        channel_id = require_channel_id(settings)
-        if channel_id is None:
-            await send_missing_channel_setup(message)
-            return
-        if message.from_user is None:
-            return
-        await storage.ensure_user(message.from_user)
-        sent_messages = await send_payload_to_chat(bot, channel_id, payload)
-        first_message_id = sent_messages[0].message_id if sent_messages else None
-        await storage.add_event(
-            message.from_user.id,
-            "admin_channel_post_sent",
-            {
-                "message_id": first_message_id,
-                "payload_kind": payload["kind"],
-            },
-        )
-        await message.answer(
-            "Пост опубликован. "
-            f"Message ID: <code>{first_message_id}</code>"
+        await start_admin_post_preview_from_payload(
+            message=message,
+            storage=storage,
+            settings=settings,
+            payload=payload,
         )
 
     @router.message(Command("delete_post"))
@@ -707,6 +691,28 @@ async def start_admin_post_wizard(
         "Сначала выбери, публикуем сейчас или планируем на конкретное время. "
         "Потом пришли текст, фото, альбом, видео или PDF. Перед отправкой я покажу предпросмотр.",
         reply_markup=new_post_keyboard(),
+    )
+
+
+async def start_admin_post_preview_from_payload(
+    *,
+    message: Message,
+    storage: EventStorage,
+    settings: Settings,
+    payload: Payload,
+) -> None:
+    if message.from_user is None:
+        return
+    if require_channel_id(settings) is None:
+        await send_missing_channel_setup(message)
+        return
+
+    await storage.ensure_user(message.from_user)
+    await save_admin_post_preview(
+        message=message,
+        storage=storage,
+        draft={"mode": "now"},
+        payload=payload,
     )
 
 
@@ -1033,24 +1039,11 @@ async def execute_direct_media_action(
     if message.from_user is None:
         return
     if action == "post":
-        channel_id = require_channel_id(settings)
-        if channel_id is None:
-            await send_missing_channel_setup(message)
-            return
-        sent_messages = await send_payload_to_chat(bot, channel_id, payload)
-        first_message_id = sent_messages[0].message_id if sent_messages else None
-        await storage.add_event(
-            message.from_user.id,
-            "admin_channel_post_sent",
-            {
-                "message_id": first_message_id,
-                "payload_kind": payload["kind"],
-                "direct_caption_command": True,
-            },
-        )
-        await message.answer(
-            "Пост опубликован. "
-            f"Message ID: <code>{first_message_id}</code>"
+        await start_admin_post_preview_from_payload(
+            message=message,
+            storage=storage,
+            settings=settings,
+            payload=payload,
         )
         return
 

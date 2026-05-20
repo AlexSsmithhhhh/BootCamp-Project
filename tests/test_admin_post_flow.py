@@ -6,7 +6,13 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
-from app.admin import build_message_payload, confirm_admin_post_draft, start_admin_post_wizard
+from app.admin import (
+    build_message_payload,
+    confirm_admin_post_draft,
+    execute_direct_media_action,
+    start_admin_post_preview_from_payload,
+    start_admin_post_wizard,
+)
 from app.config import Settings
 from app.storage import EventStorage
 
@@ -22,7 +28,13 @@ class FakeBot:
 
 class FakeResponder:
     def __init__(self) -> None:
-        self.from_user = SimpleNamespace(id=1001)
+        self.from_user = SimpleNamespace(
+            id=1001,
+            username="admin",
+            first_name="Admin",
+            last_name=None,
+            language_code="ru",
+        )
         self.reply_to_message = None
         self.answers: list[str] = []
 
@@ -62,6 +74,51 @@ class AdminPostFlowTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(draft)
         self.assertIn("TELEGRAM_CHANNEL_ID", message.answers[-1])
+
+    async def test_post_payload_creates_preview_without_publishing(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            storage = EventStorage(Path(tmp_dir) / "bot.sqlite3")
+            await storage.init()
+            message = FakeResponder()
+            bot = FakeBot()
+
+            await start_admin_post_preview_from_payload(
+                message=message,
+                storage=storage,
+                settings=settings(),
+                payload={"kind": "text", "text": "Needs review"},
+            )
+
+            draft = await storage.admin_post_draft(1001)
+
+        self.assertEqual(bot.sent_messages, [])
+        self.assertIsNotNone(draft)
+        self.assertEqual(draft["status"], "awaiting_confirm")
+        self.assertIn("Needs review", draft["payload"])
+        self.assertIn("Needs review", message.answers[-1])
+
+    async def test_media_caption_post_creates_preview_without_publishing(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            storage = EventStorage(Path(tmp_dir) / "bot.sqlite3")
+            await storage.init()
+            message = FakeResponder()
+            bot = FakeBot()
+
+            await execute_direct_media_action(
+                message=message,
+                bot=bot,
+                storage=storage,
+                settings=settings(),
+                action="post",
+                payload={"kind": "text", "text": "Caption command"},
+            )
+
+            draft = await storage.admin_post_draft(1001)
+
+        self.assertEqual(bot.sent_messages, [])
+        self.assertIsNotNone(draft)
+        self.assertEqual(draft["status"], "awaiting_confirm")
+        self.assertIn("Caption command", draft["payload"])
 
     async def test_confirm_now_publishes_payload_and_clears_draft(self) -> None:
         with TemporaryDirectory() as tmp_dir:
