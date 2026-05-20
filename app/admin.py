@@ -299,6 +299,7 @@ def admin_commands(router) -> None:
             return
 
         if callback.data == ADMIN_POST_CANCEL_CALLBACK:
+            await clear_callback_keyboard(callback.message)
             await storage.clear_admin_post_draft(callback.from_user.id)
             await callback.message.answer("Публикация отменена.")
             await callback.answer()
@@ -308,9 +309,11 @@ def admin_commands(router) -> None:
             draft = await storage.admin_post_draft(callback.from_user.id)
             payload = payload_from_draft(draft) if draft else None
             if draft is None or payload is None:
+                await clear_callback_keyboard(callback.message)
                 await callback.message.answer("Активного черновика нет. Начни заново: /post")
                 await callback.answer()
                 return
+            await clear_callback_keyboard(callback.message)
             await save_admin_post_preview(
                 message=callback.message,
                 storage=storage,
@@ -322,24 +325,14 @@ def admin_commands(router) -> None:
             return
 
         if callback.data == ADMIN_POST_EDIT_CALLBACK:
-            draft = await storage.admin_post_draft(callback.from_user.id)
-            if draft is None:
-                await callback.message.answer("Активного черновика нет. Начни заново: /post")
-                await callback.answer()
-                return
-            await storage.save_admin_post_draft(
-                admin_id=callback.from_user.id,
-                mode=draft["mode"],
-                status="awaiting_content",
-                scheduled_at=parse_stored_datetime(draft.get("scheduled_at")),
-            )
+            await clear_callback_keyboard(callback.message)
             await callback.message.answer(
-                "Ок, пришли новый текст, фото, альбом, видео или PDF. "
-                "После этого снова покажу предпросмотр."
+                "Редактирование убрали из flow. Если нужно изменить пост, отмени и начни заново: /post"
             )
             await callback.answer()
             return
 
+        await clear_callback_keyboard(callback.message)
         await confirm_admin_post_draft(
             responder=callback.message,
             bot=bot,
@@ -684,7 +677,7 @@ def admin_commands(router) -> None:
         if draft["status"] == "awaiting_confirm":
             await message.answer(
                 "Черновик уже готов. Используй кнопки под предпросмотром: "
-                "отправить, редактировать или отменить."
+                "отправить/запланировать или отменить."
             )
 
 
@@ -747,10 +740,6 @@ def admin_post_preview_keyboard(mode: str) -> InlineKeyboardMarkup:
                     text=confirm_text,
                     callback_data=ADMIN_POST_CONFIRM_CALLBACK,
                 ),
-                InlineKeyboardButton(
-                    text="Редактировать",
-                    callback_data=ADMIN_POST_EDIT_CALLBACK,
-                ),
             ],
             [
                 InlineKeyboardButton(
@@ -773,6 +762,13 @@ def admin_post_buttons_keyboard() -> InlineKeyboardMarkup:
             ]
         ]
     )
+
+
+async def clear_callback_keyboard(message: Message) -> None:
+    try:
+        await message.edit_reply_markup(reply_markup=None)
+    except TelegramBadRequest:
+        pass
 
 
 def link_buttons_keyboard(buttons: list[dict[str, str]]) -> Optional[InlineKeyboardMarkup]:

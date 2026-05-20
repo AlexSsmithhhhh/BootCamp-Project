@@ -12,6 +12,7 @@ from app.admin import (
     build_message_payload,
     confirm_admin_post_draft,
     execute_direct_media_action,
+    admin_post_preview_keyboard,
     new_post_keyboard,
     parse_link_buttons_input,
     send_manage_jobs,
@@ -108,6 +109,18 @@ class AdminPostFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Пост всем сейчас", labels)
         self.assertIn("Рассылка по сегментам", labels)
         self.assertIn("Запланировать", labels)
+
+    def test_preview_keyboard_has_only_confirm_and_cancel(self) -> None:
+        keyboard = admin_post_preview_keyboard("broadcast_scheduled")
+
+        labels = [
+            button.text
+            for row in keyboard.inline_keyboard
+            for button in row
+        ]
+
+        self.assertEqual(labels, ["Запланировать", "Отменить"])
+        self.assertNotIn("Редактировать", labels)
 
     def test_parses_link_buttons_input(self) -> None:
         parsed = parse_link_buttons_input(

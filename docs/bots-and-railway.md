@@ -142,7 +142,7 @@ Post wizard:
 4. Bot asks for content; admin sends text, photo, photo album, video, or PDF/document.
 5. Bot asks for optional link buttons. Format: `Button text | https://example.com`, one button per line, up to 100 buttons.
 6. Bot saves the draft payload in `admin_post_drafts.payload` and shows a preview.
-7. Admin confirms with `Отправить`/`Запланировать`, edits with `Редактировать`, or cancels with `Отменить`.
+7. Admin confirms with `Отправить`/`Запланировать` or cancels with `Отменить`. Editing was intentionally removed from the preview step; to change a post, cancel and start `/post` again.
 8. `/manage` shows scheduled jobs and delete buttons; `/all_post` and `/delete ID` remain available.
 
 The `/post` wizard sends to active users of the bot and does not require `TELEGRAM_CHANNEL_ID`.
