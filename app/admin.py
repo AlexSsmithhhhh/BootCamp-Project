@@ -677,7 +677,7 @@ def admin_commands(router) -> None:
         if draft["status"] == "awaiting_confirm":
             await message.answer(
                 "Черновик уже готов. Используй кнопки под предпросмотром: "
-                "отправить/запланировать или отменить."
+                "подтвердить или отменить."
             )
 
 
@@ -732,12 +732,11 @@ def new_post_keyboard() -> InlineKeyboardMarkup:
 
 
 def admin_post_preview_keyboard(mode: str) -> InlineKeyboardMarkup:
-    confirm_text = "Отправить" if mode in BROADCAST_NOW_MODES else "Запланировать"
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=confirm_text,
+                    text="Подтвердить",
                     callback_data=ADMIN_POST_CONFIRM_CALLBACK,
                 ),
             ],

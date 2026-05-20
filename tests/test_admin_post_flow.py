@@ -119,7 +119,7 @@ class AdminPostFlowTests(unittest.IsolatedAsyncioTestCase):
             for button in row
         ]
 
-        self.assertEqual(labels, ["Запланировать", "Отменить"])
+        self.assertEqual(labels, ["Подтвердить", "Отменить"])
         self.assertNotIn("Редактировать", labels)
 
     def test_parses_link_buttons_input(self) -> None:
