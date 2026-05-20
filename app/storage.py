@@ -90,6 +90,7 @@ class EventStorage:
                     status TEXT NOT NULL,
                     scheduled_at TEXT,
                     media_group_id TEXT,
+                    payload TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
@@ -104,6 +105,7 @@ class EventStorage:
             await self._ensure_user_contact_columns(db)
             await self._ensure_user_analytics_columns(db)
             await self._ensure_scheduled_job_columns(db)
+            await self._ensure_admin_post_draft_columns(db)
             await db.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_events_event_type_created_at
@@ -609,24 +611,29 @@ class EventStorage:
         status: str,
         scheduled_at: Optional[datetime] = None,
         media_group_id: Optional[str] = None,
+        payload: Optional[dict[str, Any]] = None,
     ) -> None:
         now = _utc_now()
         scheduled_at_value = None
         if scheduled_at is not None:
             scheduled_at_value = _datetime_to_utc_iso(scheduled_at)
+        serialized_payload = None
+        if payload is not None:
+            serialized_payload = json.dumps(payload, ensure_ascii=False, sort_keys=True)
         async with aiosqlite.connect(self.database_path) as db:
             await db.execute(
                 """
                 INSERT INTO admin_post_drafts (
-                    admin_id, mode, status, scheduled_at, media_group_id,
+                    admin_id, mode, status, scheduled_at, media_group_id, payload,
                     created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(admin_id) DO UPDATE SET
                     mode = excluded.mode,
                     status = excluded.status,
                     scheduled_at = excluded.scheduled_at,
                     media_group_id = excluded.media_group_id,
+                    payload = excluded.payload,
                     updated_at = excluded.updated_at
                 """,
                 (
@@ -635,6 +642,7 @@ class EventStorage:
                     status,
                     scheduled_at_value,
                     media_group_id,
+                    serialized_payload,
                     now,
                     now,
                 ),
@@ -648,7 +656,7 @@ class EventStorage:
                 db,
                 """
                 SELECT admin_id, mode, status, scheduled_at, media_group_id,
-                       created_at, updated_at
+                       payload, created_at, updated_at
                 FROM admin_post_drafts
                 WHERE admin_id = ?
                 """,
@@ -804,6 +812,13 @@ class EventStorage:
 
         if "payload" not in existing_columns:
             await db.execute("ALTER TABLE scheduled_jobs ADD COLUMN payload TEXT")
+
+    async def _ensure_admin_post_draft_columns(self, db: aiosqlite.Connection) -> None:
+        async with db.execute("PRAGMA table_info(admin_post_drafts)") as cursor:
+            existing_columns = {row[1] for row in await cursor.fetchall()}
+
+        if "payload" not in existing_columns:
+            await db.execute("ALTER TABLE admin_post_drafts ADD COLUMN payload TEXT")
 
 
 async def _fetch_one(

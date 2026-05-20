@@ -17,6 +17,9 @@ from app.storage import EventStorage
 
 
 Payload = dict[str, Any]
+ADMIN_POST_CONFIRM_CALLBACK = "admin_post_confirm"
+ADMIN_POST_EDIT_CALLBACK = "admin_post_edit"
+ADMIN_POST_CANCEL_CALLBACK = "admin_post_cancel"
 
 
 class AdminOnly(BaseFilter):
@@ -174,12 +177,14 @@ def admin_commands(router) -> None:
             "\n".join(
                 [
                     "<b>Admin-команды</b>",
-                    "/new_post или new post - мастер создания поста",
+                    "/drop_post или drop post - мастер создания поста",
+                    "/new_post или new post - старый алиас мастера",
                     "/all_post или all post - все запланированные посты",
                     "/delete ID или delete ID - отменить запланированный пост",
                     "/analytics или analytics - аналитика Telegram-бота",
                     "/post текст - сразу опубликовать текст в канал",
-                    "/post - ответом на фото/альбом/видео/PDF публикует это медиа",
+                    "/post без текста - открыть мастер создания поста",
+                    "/post ответом на фото/альбом/видео/PDF публикует это медиа",
                     "Фото/видео/PDF с caption `/post текст` публикуется сразу",
                     "/delete_post message_id - удалить пост из канала",
                     "/broadcast текст - отправить рассылку всем активным пользователям",
@@ -195,25 +200,16 @@ def admin_commands(router) -> None:
             )
         )
 
-    @router.message(Command("new_post", "newpost"))
+    @router.message(Command("drop_post", "new_post", "newpost"))
+    @router.message(TextCommand("drop post"))
+    @router.message(TextCommand("дроп пост"))
     @router.message(TextCommand("new post"))
-    @router.message(F.text.regexp(r"^\s*/?new_?post(?:@\w+)?\s*$"))
+    @router.message(F.text.regexp(r"^\s*/?(drop_?post|new_?post|дроп_?пост)(?:@\w+)?\s*$"))
     async def handle_new_post(message: Message, storage: EventStorage, settings: Settings) -> None:
         if not is_admin(message, settings):
             await deny_non_admin(message)
             return
-        if message.from_user is None:
-            return
-        await storage.ensure_user(message.from_user)
-        await storage.save_admin_post_draft(
-            admin_id=message.from_user.id,
-            mode="choose",
-            status="choosing",
-        )
-        await message.answer(
-            "Создаем новый пост. Когда публикуем?",
-            reply_markup=new_post_keyboard(),
-        )
+        await start_admin_post_wizard(message, storage, settings)
 
     @router.callback_query(F.data.in_({"admin_post_now", "admin_post_schedule"}))
     async def handle_new_post_choice(
@@ -224,6 +220,9 @@ def admin_commands(router) -> None:
         if not is_admin_identity(callback.from_user.id, callback.from_user.username, settings):
             await callback.answer("Доступно только администратору.", show_alert=True)
             return
+        if callback.message is None:
+            await callback.answer("Не могу продолжить здесь.", show_alert=True)
+            return
 
         if callback.data == "admin_post_now":
             await storage.save_admin_post_draft(
@@ -232,8 +231,9 @@ def admin_commands(router) -> None:
                 status="awaiting_content",
             )
             await callback.message.answer(
-                "Ок, публикуем сейчас. Отправь текст, фото, альбом, видео или PDF. "
-                "Если это медиа, текст добавь прямо в подпись."
+                "Ок, готовим публикацию сейчас.\n\n"
+                "Отправь следующим сообщением текст, фото, альбом, видео или PDF. "
+                "Я покажу предпросмотр и попрошу подтвердить перед публикацией."
             )
             await callback.answer()
             return
@@ -244,8 +244,64 @@ def admin_commands(router) -> None:
             status="awaiting_schedule",
         )
         await callback.message.answer(
-            "Укажи дату и время публикации по Киеву в формате YYYY-MM-DD HH:MM.\n"
-            "Например: 2026-05-20 14:00"
+            "Укажи дату и время публикации по Киеву в формате <code>YYYY-MM-DD HH:MM</code>.\n"
+            "Например: <code>2026-05-20 14:00</code>"
+        )
+        await callback.answer()
+
+    @router.callback_query(
+        F.data.in_(
+            {
+                ADMIN_POST_CONFIRM_CALLBACK,
+                ADMIN_POST_EDIT_CALLBACK,
+                ADMIN_POST_CANCEL_CALLBACK,
+            }
+        )
+    )
+    async def handle_admin_post_confirmation(
+        callback: CallbackQuery,
+        bot: Bot,
+        storage: EventStorage,
+        settings: Settings,
+    ) -> None:
+        if not is_admin_identity(callback.from_user.id, callback.from_user.username, settings):
+            await callback.answer("Доступно только администратору.", show_alert=True)
+            return
+        if callback.message is None:
+            await callback.answer("Не могу продолжить здесь.", show_alert=True)
+            return
+
+        if callback.data == ADMIN_POST_CANCEL_CALLBACK:
+            await storage.clear_admin_post_draft(callback.from_user.id)
+            await callback.message.answer("Публикация отменена.")
+            await callback.answer()
+            return
+
+        if callback.data == ADMIN_POST_EDIT_CALLBACK:
+            draft = await storage.admin_post_draft(callback.from_user.id)
+            if draft is None:
+                await callback.message.answer("Активного черновика нет. Начни заново: /drop_post")
+                await callback.answer()
+                return
+            await storage.save_admin_post_draft(
+                admin_id=callback.from_user.id,
+                mode=draft["mode"],
+                status="awaiting_content",
+                scheduled_at=parse_stored_datetime(draft.get("scheduled_at")),
+            )
+            await callback.message.answer(
+                "Ок, пришли новый текст, фото, альбом, видео или PDF. "
+                "После этого снова покажу предпросмотр."
+            )
+            await callback.answer()
+            return
+
+        await confirm_admin_post_draft(
+            responder=callback.message,
+            bot=bot,
+            storage=storage,
+            settings=settings,
+            admin_id=callback.from_user.id,
         )
         await callback.answer()
 
@@ -306,18 +362,17 @@ def admin_commands(router) -> None:
         if not is_admin(message, settings):
             await deny_non_admin(message)
             return
-        channel_id = require_channel_id(settings)
-        if channel_id is None:
-            await message.answer("Не задан TELEGRAM_CHANNEL_ID.")
-            return
-        await storage.ensure_user(message.from_user)
         payload = await build_message_payload(message, storage, command.args)
         if payload is None:
-            await message.answer(
-                "Формат: /post текст. Для медиа отправь фото/альбом/видео/PDF "
-                "боту и ответь на него командой /post."
-            )
+            await start_admin_post_wizard(message, storage, settings)
             return
+        channel_id = require_channel_id(settings)
+        if channel_id is None:
+            await send_missing_channel_setup(message)
+            return
+        if message.from_user is None:
+            return
+        await storage.ensure_user(message.from_user)
         sent_messages = await send_payload_to_chat(bot, channel_id, payload)
         first_message_id = sent_messages[0].message_id if sent_messages else None
         await storage.add_event(
@@ -346,7 +401,7 @@ def admin_commands(router) -> None:
             return
         channel_id = require_channel_id(settings)
         if channel_id is None:
-            await message.answer("Не задан TELEGRAM_CHANNEL_ID.")
+            await send_missing_channel_setup(message)
             return
         await storage.ensure_user(message.from_user)
         message_id = parse_int(command.args)
@@ -404,7 +459,7 @@ def admin_commands(router) -> None:
             return
         channel_id = require_channel_id(settings)
         if channel_id is None:
-            await message.answer("Не задан TELEGRAM_CHANNEL_ID.")
+            await send_missing_channel_setup(message)
             return
         await storage.ensure_user(message.from_user)
         parsed = parse_scheduled_command(command.args)
@@ -533,6 +588,13 @@ def admin_commands(router) -> None:
                 draft=draft,
                 payload={"kind": "text", "text": message.text.strip()},
             )
+            return
+
+        if draft["status"] == "awaiting_confirm":
+            await message.answer(
+                "Черновик уже готов. Используй кнопки под предпросмотром: "
+                "опубликовать, редактировать или отменить."
+            )
 
 
 async def execute_due_job(bot: Bot, storage: EventStorage, job: dict) -> None:
@@ -579,6 +641,75 @@ def new_post_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+def admin_post_preview_keyboard(mode: str) -> InlineKeyboardMarkup:
+    confirm_text = "Опубликовать" if mode == "now" else "Запланировать"
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=confirm_text,
+                    callback_data=ADMIN_POST_CONFIRM_CALLBACK,
+                ),
+                InlineKeyboardButton(
+                    text="Редактировать",
+                    callback_data=ADMIN_POST_EDIT_CALLBACK,
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Отменить",
+                    callback_data=ADMIN_POST_CANCEL_CALLBACK,
+                )
+            ],
+        ]
+    )
+
+
+def missing_channel_setup_message() -> str:
+    return "\n".join(
+        [
+            "<b>Канал для публикаций не настроен</b>",
+            "",
+            "Чтобы публиковать посты, нужно:",
+            "1. Создать или открыть Telegram-канал.",
+            "2. Добавить <code>@bootcampweek_bot</code> администратором с правом публиковать.",
+            "3. В Railway service <code>bootcamp-telegram-bot</code> добавить переменную:",
+            "<code>TELEGRAM_CHANNEL_ID=@channel_username</code>",
+            "",
+            "Для приватного канала вместо username нужен id вида <code>-1001234567890</code>.",
+        ]
+    )
+
+
+async def send_missing_channel_setup(message: Message) -> None:
+    await message.answer(missing_channel_setup_message())
+
+
+async def start_admin_post_wizard(
+    message: Message,
+    storage: EventStorage,
+    settings: Settings,
+) -> None:
+    if message.from_user is None:
+        return
+    if require_channel_id(settings) is None:
+        await send_missing_channel_setup(message)
+        return
+
+    await storage.ensure_user(message.from_user)
+    await storage.save_admin_post_draft(
+        admin_id=message.from_user.id,
+        mode="choose",
+        status="choosing",
+    )
+    await message.answer(
+        "Запускаю мастер публикации.\n\n"
+        "Сначала выбери, публикуем сейчас или планируем на конкретное время. "
+        "Потом пришли текст, фото, альбом, видео или PDF. Перед отправкой я покажу предпросмотр.",
+        reply_markup=new_post_keyboard(),
+    )
+
+
 async def send_scheduled_jobs(message: Message, storage: EventStorage) -> None:
     jobs = await storage.list_scheduled_jobs(limit=30)
     if not jobs:
@@ -618,6 +749,137 @@ def format_analytics(overview: dict[str, int]) -> str:
         f"Discord-инвайтов выдано: <b>{overview['discord_invites_sent']}</b>\n"
         f"Событий в журнале: <b>{overview['events_total']}</b>"
     )
+
+
+def payload_from_draft(draft: dict[str, Any]) -> Optional[Payload]:
+    raw_payload = draft.get("payload")
+    if not raw_payload:
+        return None
+    try:
+        loaded = json.loads(raw_payload)
+    except json.JSONDecodeError:
+        return None
+    if isinstance(loaded, dict) and loaded.get("kind"):
+        return loaded
+    return None
+
+
+def format_admin_post_preview(draft: dict[str, Any], payload: Payload) -> str:
+    mode = "сейчас" if draft["mode"] == "now" else "запланировано"
+    lines = [
+        "<b>Предпросмотр поста</b>",
+        f"Режим: <b>{mode}</b>",
+    ]
+    if draft["mode"] == "scheduled" and draft.get("scheduled_at"):
+        lines.append(f"Время: <code>{escape(str(draft['scheduled_at']))}</code>")
+    lines.extend(
+        [
+            "",
+            "<b>Контент</b>",
+            escape(payload_preview(payload)[:1200]),
+            "",
+            "Проверь пост и выбери действие ниже.",
+        ]
+    )
+    return "\n".join(lines)
+
+
+async def save_admin_post_preview(
+    *,
+    message: Message,
+    storage: EventStorage,
+    draft: dict[str, Any],
+    payload: Payload,
+) -> None:
+    if message.from_user is None:
+        return
+
+    scheduled_at = parse_stored_datetime(draft.get("scheduled_at"))
+    if draft["mode"] == "scheduled" and scheduled_at is None:
+        await message.answer("Не нашел время публикации. Начни заново: /drop_post")
+        await storage.clear_admin_post_draft(message.from_user.id)
+        return
+
+    await storage.save_admin_post_draft(
+        admin_id=message.from_user.id,
+        mode=draft["mode"],
+        status="awaiting_confirm",
+        scheduled_at=scheduled_at,
+        media_group_id=draft.get("media_group_id"),
+        payload=payload,
+    )
+    preview_draft = await storage.admin_post_draft(message.from_user.id)
+    if preview_draft is None:
+        preview_draft = draft | {"status": "awaiting_confirm"}
+    await message.answer(
+        format_admin_post_preview(preview_draft, payload),
+        reply_markup=admin_post_preview_keyboard(draft["mode"]),
+    )
+
+
+async def confirm_admin_post_draft(
+    *,
+    responder: Message,
+    bot: Bot,
+    storage: EventStorage,
+    settings: Settings,
+    admin_id: int,
+) -> None:
+    draft = await storage.admin_post_draft(admin_id)
+    if draft is None or draft["status"] != "awaiting_confirm":
+        await responder.answer("Активного черновика нет. Начни заново: /drop_post")
+        return
+
+    payload = payload_from_draft(draft)
+    if payload is None:
+        await responder.answer("Не нашел контент черновика. Начни заново: /drop_post")
+        await storage.clear_admin_post_draft(admin_id)
+        return
+
+    channel_id = require_channel_id(settings)
+    if channel_id is None:
+        await responder.answer(missing_channel_setup_message())
+        return
+
+    if draft["mode"] == "now":
+        sent_messages = await send_payload_to_chat(bot, channel_id, payload)
+        first_message_id = sent_messages[0].message_id if sent_messages else None
+        await storage.add_event(
+            admin_id,
+            "admin_channel_post_sent",
+            {
+                "message_id": first_message_id,
+                "payload_kind": payload["kind"],
+                "drop_post_flow": True,
+            },
+        )
+        await storage.clear_admin_post_draft(admin_id)
+        await responder.answer(
+            "Пост опубликован. "
+            f"Message ID: <code>{first_message_id}</code>"
+        )
+        return
+
+    if draft["mode"] == "scheduled":
+        scheduled_at = parse_stored_datetime(draft.get("scheduled_at"))
+        if scheduled_at is None:
+            await responder.answer("Не нашел время публикации. Начни заново: /drop_post")
+            await storage.clear_admin_post_draft(admin_id)
+            return
+        job_id = await storage.create_scheduled_job(
+            job_type="channel_post",
+            text=payload_preview(payload),
+            payload=payload,
+            target_chat_id=str(channel_id),
+            scheduled_at=scheduled_at,
+            created_by=admin_id,
+        )
+        await storage.clear_admin_post_draft(admin_id)
+        await responder.answer(f"Пост запланирован. ID: <code>{job_id}</code>")
+        return
+
+    await responder.answer("Не понял режим публикации. Начни заново: /drop_post")
+    await storage.clear_admin_post_draft(admin_id)
 
 
 async def execute_draft_media_group_action(
@@ -694,49 +956,16 @@ async def finish_admin_post_draft(
 ) -> None:
     if message.from_user is None:
         return
-    channel_id = require_channel_id(settings)
-    if channel_id is None:
-        await message.answer("Не задан TELEGRAM_CHANNEL_ID.")
-        return
-
-    if draft["mode"] == "now":
-        sent_messages = await send_payload_to_chat(bot, channel_id, payload)
-        first_message_id = sent_messages[0].message_id if sent_messages else None
-        await storage.add_event(
-            message.from_user.id,
-            "admin_channel_post_sent",
-            {
-                "message_id": first_message_id,
-                "payload_kind": payload["kind"],
-                "new_post_flow": True,
-            },
-        )
-        await storage.clear_admin_post_draft(message.from_user.id)
-        await message.answer(
-            "Пост опубликован. "
-            f"Message ID: <code>{first_message_id}</code>"
-        )
-        return
-
-    if draft["mode"] == "scheduled":
-        scheduled_at = parse_stored_datetime(draft.get("scheduled_at"))
-        if scheduled_at is None:
-            await message.answer("Не нашел время публикации. Начни заново: /new_post")
-            await storage.clear_admin_post_draft(message.from_user.id)
-            return
-        job_id = await storage.create_scheduled_job(
-            job_type="channel_post",
-            text=payload_preview(payload),
+    if draft["mode"] in {"now", "scheduled"}:
+        await save_admin_post_preview(
+            message=message,
+            storage=storage,
+            draft=draft,
             payload=payload,
-            target_chat_id=str(channel_id),
-            scheduled_at=scheduled_at,
-            created_by=message.from_user.id,
         )
-        await storage.clear_admin_post_draft(message.from_user.id)
-        await message.answer(f"Пост запланирован. ID: <code>{job_id}</code>")
         return
 
-    await message.answer("Не понял режим публикации. Начни заново: /new_post")
+    await message.answer("Не понял режим публикации. Начни заново: /drop_post")
     await storage.clear_admin_post_draft(message.from_user.id)
 
 
@@ -806,7 +1035,7 @@ async def execute_direct_media_action(
     if action == "post":
         channel_id = require_channel_id(settings)
         if channel_id is None:
-            await message.answer("Не задан TELEGRAM_CHANNEL_ID.")
+            await send_missing_channel_setup(message)
             return
         sent_messages = await send_payload_to_chat(bot, channel_id, payload)
         first_message_id = sent_messages[0].message_id if sent_messages else None
@@ -1074,6 +1303,10 @@ def normalize_plain_command(value: Optional[str]) -> Optional[str]:
         normalized = normalized.replace("newpost", "new post", 1)
     if normalized.startswith("allpost"):
         normalized = normalized.replace("allpost", "all post", 1)
+    if normalized.startswith("droppost"):
+        normalized = normalized.replace("droppost", "drop post", 1)
+    if normalized.startswith("дроппост"):
+        normalized = normalized.replace("дроппост", "дроп пост", 1)
     return " ".join(normalized.split())
 
 

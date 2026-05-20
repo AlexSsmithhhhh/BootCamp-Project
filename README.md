@@ -1,5 +1,6 @@
 # BootCamp-Project
 
+Документы проекта начинаются с `docs/README.md`.
 Документация по двум Railway-сервисам лежит в `docs/bots-and-railway.md`.
 Архитектура аналитики Telegram-бота лежит в `docs/telegram-analytics-architecture.md`.
 В проекте сейчас два бота: Telegram-бот в корне репозитория и Discord-бот в `services/discord-bot`.

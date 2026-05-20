@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from app.admin import (
+    missing_channel_setup_message,
     is_admin_identity,
     normalize_plain_command,
     parse_media_caption_command,
@@ -29,11 +30,21 @@ class AdminCommandTests(unittest.TestCase):
         self.assertIsNone(parse_media_caption_command("Regular photo caption"))
 
     def test_normalizes_plain_commands(self) -> None:
+        self.assertEqual(normalize_plain_command("/drop_post"), "drop post")
+        self.assertEqual(normalize_plain_command("drop post"), "drop post")
+        self.assertEqual(normalize_plain_command("дроп пост"), "дроп пост")
         self.assertEqual(normalize_plain_command("/new_post"), "new post")
         self.assertEqual(normalize_plain_command("/newpost"), "new post")
         self.assertEqual(normalize_plain_command("all post"), "all post")
         self.assertEqual(normalize_plain_command("allpost"), "all post")
         self.assertEqual(normalize_plain_command("/delete 7"), "delete 7")
+
+    def test_missing_channel_setup_message_explains_required_variable(self) -> None:
+        message = missing_channel_setup_message()
+
+        self.assertIn("TELEGRAM_CHANNEL_ID", message)
+        self.assertIn("@channel_username", message)
+        self.assertIn("-1001234567890", message)
 
     def test_parses_post_schedule_input_as_utc(self) -> None:
         parsed = parse_post_schedule_input("2026-05-20 14:00")

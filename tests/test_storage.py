@@ -83,6 +83,35 @@ class EventStorageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(start_payload, "utm_source=instagram&campaign=bootcamp")
         self.assertEqual(source, "instagram")
 
+    async def test_save_contact_upserts_user_without_prior_start(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            database_path = Path(tmp_dir) / "bot.sqlite3"
+            storage = EventStorage(database_path)
+            await storage.init()
+
+            user = User(id=1005, is_bot=False, first_name="Mira", username="mira")
+            contact = Contact(
+                phone_number="+380671112233",
+                first_name="Mira",
+                user_id=user.id,
+            )
+
+            await storage.save_contact(user, contact)
+
+            with closing(connect(database_path)) as db:
+                phone_number, start_count, status = db.execute(
+                    """
+                    SELECT phone_number, start_count, subscription_status
+                    FROM users
+                    WHERE telegram_id = ?
+                    """,
+                    (user.id,),
+                ).fetchone()
+
+        self.assertEqual(phone_number, "+380671112233")
+        self.assertEqual(start_count, 0)
+        self.assertEqual(status, "active")
+
     async def test_scheduled_jobs_lifecycle(self) -> None:
         with TemporaryDirectory() as tmp_dir:
             database_path = Path(tmp_dir) / "bot.sqlite3"
@@ -161,6 +190,7 @@ class EventStorageTests(unittest.IsolatedAsyncioTestCase):
                 status="awaiting_content",
                 scheduled_at=scheduled_at,
                 media_group_id="album-1",
+                payload={"kind": "text", "text": "Draft post"},
             )
 
             draft = await storage.admin_post_draft(1001)
@@ -171,7 +201,77 @@ class EventStorageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(draft["mode"], "scheduled")
         self.assertEqual(draft["status"], "awaiting_content")
         self.assertEqual(draft["media_group_id"], "album-1")
+        self.assertEqual(json.loads(draft["payload"])["text"], "Draft post")
         self.assertIsNone(deleted_draft)
+
+    async def test_admin_post_draft_payload_column_is_migrated(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            database_path = Path(tmp_dir) / "bot.sqlite3"
+            with closing(connect(database_path)) as db:
+                db.execute(
+                    """
+                    CREATE TABLE admin_post_drafts (
+                        admin_id INTEGER PRIMARY KEY,
+                        mode TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        scheduled_at TEXT,
+                        media_group_id TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                    """
+                )
+                db.commit()
+
+            storage = EventStorage(database_path)
+            await storage.init()
+            await storage.save_admin_post_draft(
+                admin_id=1001,
+                mode="now",
+                status="awaiting_confirm",
+                payload={"kind": "text", "text": "Migrated draft"},
+            )
+
+            draft = await storage.admin_post_draft(1001)
+            with closing(connect(database_path)) as db:
+                columns = {row[1] for row in db.execute("PRAGMA table_info(admin_post_drafts)")}
+
+        self.assertIn("payload", columns)
+        self.assertEqual(json.loads(draft["payload"])["text"], "Migrated draft")
+
+    async def test_user_has_contact_when_event_exists_without_user_contact_fields(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            database_path = Path(tmp_dir) / "bot.sqlite3"
+            storage = EventStorage(database_path)
+            await storage.init()
+
+            user = User(id=1003, is_bot=False, first_name="Sam", username="sam")
+            await storage.record_start(user)
+
+            with closing(connect(database_path)) as db:
+                db.execute(
+                    """
+                    INSERT INTO events (telegram_id, event_type, payload, created_at)
+                    VALUES (?, 'contact_shared', ?, ?)
+                    """,
+                    (user.id, "{}", datetime.now(timezone.utc).isoformat()),
+                )
+                db.commit()
+
+            self.assertTrue(await storage.user_has_contact(user.id))
+
+    async def test_contact_prompt_cooldown(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            database_path = Path(tmp_dir) / "bot.sqlite3"
+            storage = EventStorage(database_path)
+            await storage.init()
+
+            user = User(id=1004, is_bot=False, first_name="Nika", username="nika")
+            await storage.record_start(user)
+
+            self.assertTrue(await storage.should_prompt_contact(user.id, cooldown_seconds=3600))
+            await storage.mark_contact_prompted(user)
+            self.assertFalse(await storage.should_prompt_contact(user.id, cooldown_seconds=3600))
 
 
 if __name__ == "__main__":

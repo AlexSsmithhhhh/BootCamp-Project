@@ -105,11 +105,13 @@ railway.cmd logs --service "bootcamp-discord-bot" --environment "production" --l
 Admin-команды Telegram:
 
 - `/admin_help` - список команд.
-- `/new_post`, `/newpost` или `new post` - мастер создания поста: выбрать "сейчас" или "запланировать", затем отправить контент.
+- `/drop_post`, `drop post` или `дроп пост` - основной мастер создания поста.
+- `/new_post`, `/newpost` или `new post` - старые алиасы мастера создания поста.
 - `/all_post` или `all post` - список запланированных публикаций.
 - `/delete ID` или `delete ID` - отменить запланированную публикацию.
 - `/analytics` или `analytics` - краткая аналитика Telegram-бота.
 - `/post текст` - сразу опубликовать пост в `TELEGRAM_CHANNEL_ID`.
+- `/post` без текста - открыть мастер создания поста.
 - `/post` ответом на фото/альбом/видео/PDF - опубликовать это медиа в `TELEGRAM_CHANNEL_ID`.
 - Фото/видео/PDF с caption `/post текст` - сразу опубликовать медиа с подписью, без отдельной команды.
 - `/delete_post message_id` - удалить пост из канала.
@@ -131,19 +133,27 @@ Media workflow:
 4. Быстрый вариант для немедленной отправки: caption самого медиа начинается с `/post текст` или `/broadcast текст`.
 5. Альбомы кешируются в SQLite table `admin_media_cache`, а готовый payload для отложенной отправки хранится в `scheduled_jobs.payload`.
 
-New post wizard:
+Drop post wizard:
 
-1. Admin writes `/new_post`, `/newpost` or `new post`.
+1. Admin writes `/drop_post`, `drop post`, `дроп пост`, `/new_post`, `/newpost` or `new post`.
 2. Bot asks whether to publish now or schedule.
 3. For schedule, admin sends date/time in `YYYY-MM-DD HH:MM`.
-4. Bot asks for content; admin sends text, photo, photo album, video, or PDF/document. Caption becomes post text for media.
-5. `/all_post` shows scheduled jobs and `/delete ID` cancels a scheduled job.
+4. Bot asks for content; admin sends text, photo, photo album, video, or PDF/document.
+5. Bot saves the draft payload in `admin_post_drafts.payload` and shows a preview.
+6. Admin confirms with `Опубликовать`/`Запланировать`, edits with `Редактировать`, or cancels with `Отменить`.
+7. `/all_post` shows scheduled jobs and `/delete ID` cancels a scheduled job.
+
+If `TELEGRAM_CHANNEL_ID` is missing, the wizard shows setup instructions instead of a short technical error. The bot must be an admin in the target Telegram channel.
 
 Contact gate:
 
+- First `/start` shows a welcome message and asks for phone contact.
+- Repeat `/start` without a saved contact shows a returning-user prompt and asks for the phone number again.
 - A user shares phone contact only once.
 - After `contact_received_at` is saved in SQLite, `/start` and fallback messages no longer ask for the phone number again.
-- Known users get the Discord link directly.
+- Known users get the Discord link directly on `/start` or `/discord`.
+- Unknown fallback messages from known users are ignored silently.
+- Contact saving uses SQLite upsert, so contact messages create or update the user row atomically.
 - Added `/discord` (alias `/access`) to resend the Discord invite on demand.
 - Contact prompt is rate-limited (`last_contact_prompt_at`) so the bot does not spam "share phone" on every message.
 
