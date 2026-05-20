@@ -2,6 +2,26 @@
 
 Журнал коротких записей по проекту: что проверили, что решили, какие ограничения остались. Новые записи добавляем сверху.
 
+## 2026-05-20 - `/admin` analytics и UTM-like источники
+
+Запрос: сделать команду `/admin`, которая показывает, сколько людей добавилось и из каких сегментов/UTM-источников они пришли.
+
+Что изменено:
+
+- добавлена команда `/admin`; `/analytics` остался алиасом того же отчета;
+- отчет показывает users total/active/blocked, новых за 24 часа и 7 дней, контакты, Discord-инвайты, start-события и event log total;
+- добавлена группировка по `users.source`: users, contacts и contact conversion по каждому источнику;
+- deep-link payload из `/start` поддерживает простые сегменты `instagram`, prefix-форматы `utm_source_instagram`, `campaign_bootcamp`, `segment_partner`, а также key-value payload если он дошел до бота;
+- первый найденный source пользователя сохраняется как acquisition source и не перезаписывается повторными `/start` с другим payload.
+
+Проверка:
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests
+```
+
+Результат: `39 tests OK`.
+
 ## 2026-05-20 - `/manage` и link-кнопки под постами
 
 Запрос: управлять запланированными отправками из бота и добавлять кнопки-ссылки под посты.

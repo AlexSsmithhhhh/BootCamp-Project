@@ -179,8 +179,8 @@ class EventStorage:
                         subscription_status = 'active',
                         unsubscribed_at = NULL,
                         subscribed_at = COALESCE(subscribed_at, ?),
-                        start_payload = COALESCE(?, start_payload),
-                        source = COALESCE(?, source),
+                        start_payload = COALESCE(start_payload, ?),
+                        source = COALESCE(source, ?),
                         start_count = start_count + 1
                     WHERE telegram_id = ?
                     """,
@@ -749,6 +749,8 @@ class EventStorage:
             await db.commit()
 
     async def analytics_overview(self) -> dict[str, int]:
+        last_24h = _datetime_to_utc_iso(datetime.now(timezone.utc) - timedelta(days=1))
+        last_7d = _datetime_to_utc_iso(datetime.now(timezone.utc) - timedelta(days=7))
         async with aiosqlite.connect(self.database_path) as db:
             totals = {
                 "users_total": await _fetch_count(db, "SELECT COUNT(*) FROM users"),
@@ -768,9 +770,56 @@ class EventStorage:
                     db,
                     "SELECT COUNT(*) FROM users WHERE discord_invite_sent_at IS NOT NULL",
                 ),
+                "users_last_24h": await _fetch_count(
+                    db,
+                    "SELECT COUNT(*) FROM users WHERE first_seen_at >= ?",
+                    (last_24h,),
+                ),
+                "users_last_7d": await _fetch_count(
+                    db,
+                    "SELECT COUNT(*) FROM users WHERE first_seen_at >= ?",
+                    (last_7d,),
+                ),
+                "contacts_last_7d": await _fetch_count(
+                    db,
+                    "SELECT COUNT(*) FROM users WHERE contact_received_at >= ?",
+                    (last_7d,),
+                ),
+                "starts_total": await _fetch_count(
+                    db,
+                    "SELECT COUNT(*) FROM events WHERE event_type IN ('start', 'start_repeat')",
+                ),
                 "events_total": await _fetch_count(db, "SELECT COUNT(*) FROM events"),
             }
         return totals
+
+    async def analytics_sources(self, limit: int = 10) -> list[dict[str, Any]]:
+        async with aiosqlite.connect(self.database_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                """
+                SELECT
+                    CASE
+                        WHEN source IS NULL OR TRIM(source) = '' THEN 'direct'
+                        ELSE source
+                    END AS source,
+                    COUNT(*) AS users_total,
+                    SUM(CASE WHEN subscription_status = 'active' THEN 1 ELSE 0 END) AS users_active,
+                    SUM(CASE WHEN contact_received_at IS NOT NULL THEN 1 ELSE 0 END) AS contacts_shared,
+                    SUM(CASE WHEN discord_invite_sent_at IS NOT NULL THEN 1 ELSE 0 END) AS discord_invites_sent
+                FROM users
+                GROUP BY
+                    CASE
+                        WHEN source IS NULL OR TRIM(source) = '' THEN 'direct'
+                        ELSE source
+                    END
+                ORDER BY users_total DESC, source
+                LIMIT ?
+                """,
+                (limit,),
+            ) as cursor:
+                rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
 
     async def _ensure_user_contact_columns(self, db: aiosqlite.Connection) -> None:
         async with db.execute("PRAGMA table_info(users)") as cursor:
@@ -830,8 +879,12 @@ async def _fetch_one(
         return await cursor.fetchone()
 
 
-async def _fetch_count(db: aiosqlite.Connection, query: str) -> int:
-    async with db.execute(query) as cursor:
+async def _fetch_count(
+    db: aiosqlite.Connection,
+    query: str,
+    parameters: tuple[Any, ...] = (),
+) -> int:
+    async with db.execute(query, parameters) as cursor:
         row = await cursor.fetchone()
     return int(row[0])
 
@@ -859,11 +912,17 @@ def _datetime_to_utc_iso(value: datetime) -> str:
 def _source_from_payload(start_payload: Optional[str]) -> Optional[str]:
     if not start_payload:
         return None
-    if "=" not in start_payload:
-        return start_payload[:100]
-    parsed = parse_qs(start_payload, keep_blank_values=False)
-    for key in ("utm_source", "source", "src", "campaign"):
+    normalized_payload = start_payload.strip()
+    if "=" not in normalized_payload:
+        lowered_payload = normalized_payload.lower()
+        for prefix in ("utm_source_", "source_", "src_", "campaign_", "segment_"):
+            if lowered_payload.startswith(prefix):
+                extracted = normalized_payload[len(prefix) :].strip("_-")
+                return (extracted or normalized_payload)[:100]
+        return normalized_payload[:100]
+    parsed = parse_qs(normalized_payload, keep_blank_values=False)
+    for key in ("utm_source", "source", "src", "campaign", "segment"):
         values = parsed.get(key)
         if values:
             return values[0][:100]
-    return start_payload[:100]
+    return normalized_payload[:100]

@@ -9,7 +9,7 @@ Last updated: 2026-05-20
 - Telegram funnel bot в корне репозитория, Python 3.12 + aiogram.
 - Discord bot в `services/discord-bot`, Node.js + discord.js.
 
-Telegram-бот запрашивает контакт перед выдачей Discord-ссылки, сохраняет пользователей и события в SQLite, поддерживает admin-команды для постов, рассылок, отложенных публикаций и базовой аналитики.
+Telegram-бот запрашивает контакт перед выдачей Discord-ссылки, сохраняет пользователей и события в SQLite, поддерживает admin-команды для постов, рассылок, отложенных публикаций и аналитики по источникам.
 
 ## Data Storage
 
@@ -65,6 +65,13 @@ Admin posting:
 - `/manage` показывает запланированные отправки и позволяет удалить их кнопками;
 - мастер отправляет пользователям бота и не требует `TELEGRAM_CHANNEL_ID`.
 
+Admin analytics:
+
+- `/admin` показывает общий размер базы, активных/заблокированных пользователей, новые добавления за 24 часа и 7 дней, контакты, выданные Discord-инвайты и количество start-событий;
+- `/analytics` остается алиасом того же отчета;
+- источники берутся из deep-link payload `/start`, например `https://t.me/<bot_username>?start=instagram` или `https://t.me/<bot_username>?start=utm_source_instagram`;
+- первый найденный источник пользователя сохраняется в `users.source`, прямые заходы отображаются как `direct`.
+
 ## Known Limits
 
 - Docker Desktop на момент проверки не отвечал, поэтому живой локальный контейнер не проверялся через `docker compose ps`.
@@ -79,4 +86,4 @@ Telegram tests:
 .\.venv\Scripts\python.exe -m unittest discover -s tests
 ```
 
-Последний результат на 2026-05-20: `36 tests OK`.
+Последний результат на 2026-05-20: `39 tests OK`.

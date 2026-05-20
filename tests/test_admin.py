@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from app.admin import (
+    format_analytics,
     missing_channel_setup_message,
     is_admin_identity,
     normalize_plain_command,
@@ -67,6 +68,38 @@ class AdminCommandTests(unittest.TestCase):
         self.assertTrue(is_admin_identity(2002, "qweertyck", settings))
         self.assertTrue(is_admin_identity(2002, "QWEERTYCK", settings))
         self.assertFalse(is_admin_identity(2002, "someoneelse", settings))
+
+    def test_format_analytics_includes_source_breakdown_and_tracking_hint(self) -> None:
+        message = format_analytics(
+            {
+                "users_total": 3,
+                "users_active": 3,
+                "users_blocked": 0,
+                "contacts_shared": 1,
+                "discord_invites_sent": 1,
+                "users_last_24h": 2,
+                "users_last_7d": 3,
+                "contacts_last_7d": 1,
+                "starts_total": 4,
+                "events_total": 5,
+            },
+            [
+                {
+                    "source": "instagram",
+                    "users_total": 2,
+                    "contacts_shared": 1,
+                },
+                {
+                    "source": "direct",
+                    "users_total": 1,
+                    "contacts_shared": 0,
+                },
+            ],
+        )
+
+        self.assertIn("Admin analytics", message)
+        self.assertIn("instagram", message)
+        self.assertIn("?start=utm_source_instagram", message)
 
     def test_settings_reads_admin_usernames(self) -> None:
         env = {

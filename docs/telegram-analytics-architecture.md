@@ -57,13 +57,15 @@ Telegram-бот хранит данные в двух слоях.
 
 ```text
 https://t.me/<bot_username>?start=utm_source_instagram
-https://t.me/<bot_username>?start=utm_source=instagram&campaign=bootcamp_week
+https://t.me/<bot_username>?start=instagram
 ```
 
 Бот сохраняет:
 
 - `start_payload` - сырой payload из `/start`;
-- `source` - нормализованный источник из `utm_source`, `source`, `src`, `campaign` или сам payload.
+- `source` - нормализованный источник из `utm_source`, `source`, `src`, `campaign`, `segment`, prefix-форматов вроде `utm_source_instagram`, или сам payload.
+
+Первый найденный source считается acquisition source и не перезаписывается повторными `/start` с другим payload. Если payload не передан, пользователь попадает в source `direct` в отчете `/admin`.
 
 ## База Данных
 
@@ -97,7 +99,8 @@ Admin-команды доступны Telegram user IDs из `TELEGRAM_ADMIN_IDS
 - `/drop_post`, `drop post`, `дроп пост`, `/new_post`, `/newpost` или `new post` - старые алиасы мастера `/post`.
 - `/all_post` или `all post` - показывает запланированные публикации.
 - `/delete ID` или `delete ID` - отменяет запланированную публикацию.
-- `/analytics` или `analytics` - показывает краткую аналитику по пользователям и событиям.
+- `/admin` - показывает аналитику по пользователям, контактам, динамике и источникам/сегментам.
+- `/analytics` или `analytics` - алиас отчета `/admin`.
 - `/post текст` - создает preview и отправляет пользователям бота только после подтверждения.
 - `/post` ответом на фото/альбом/видео/PDF - создает preview медиа и отправляет пользователям бота только после подтверждения.
 - Фото/видео/PDF с caption `/post текст` - создает preview медиа с подписью.

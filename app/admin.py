@@ -188,6 +188,7 @@ def admin_commands(router) -> None:
                     "/post - мастер: пост всем сейчас, рассылка по сегментам или запланировать",
                     "/drop_post или /new_post - старые алиасы мастера /post",
                     "/manage - управлять запланированными отправками",
+                    "/admin - аналитика пользователей и источников",
                     "/all_post или all post - все запланированные посты",
                     "/delete ID или delete ID - отменить запланированный пост",
                     "/analytics или analytics - аналитика Telegram-бота",
@@ -420,15 +421,23 @@ def admin_commands(router) -> None:
             normalize_plain_command(message.text).split(maxsplit=1)[1],
         )
 
+    @router.message(Command("admin"))
+    @router.message(TextCommand("admin"))
+    @router.message(F.text.regexp(r"^\s*/?admin(?:@\w+)?\s*$"))
     @router.message(Command("analytics"))
     @router.message(TextCommand("analytics"))
     @router.message(F.text.regexp(r"^\s*/?analytics(?:@\w+)?\s*$"))
-    async def handle_analytics(message: Message, storage: EventStorage, settings: Settings) -> None:
+    async def handle_admin_dashboard(
+        message: Message,
+        storage: EventStorage,
+        settings: Settings,
+    ) -> None:
         if not is_admin(message, settings):
             await deny_non_admin(message)
             return
         overview = await storage.analytics_overview()
-        await message.answer(format_analytics(overview))
+        sources = await storage.analytics_sources(limit=10)
+        await message.answer(format_analytics(overview, sources))
 
     @router.message(Command("post"))
     async def handle_post(
@@ -895,16 +904,57 @@ async def delete_scheduled_job_from_text(
         await message.answer("Не нашел активную запланированную публикацию с таким ID.")
 
 
-def format_analytics(overview: dict[str, int]) -> str:
-    return (
-        "<b>Telegram analytics</b>\n"
-        f"Всего пользователей: <b>{overview['users_total']}</b>\n"
-        f"Активных: <b>{overview['users_active']}</b>\n"
-        f"Заблокировали бота: <b>{overview['users_blocked']}</b>\n"
-        f"Контактов получено: <b>{overview['contacts_shared']}</b>\n"
-        f"Discord-инвайтов выдано: <b>{overview['discord_invites_sent']}</b>\n"
-        f"Событий в журнале: <b>{overview['events_total']}</b>"
+def format_analytics(
+    overview: dict[str, int],
+    sources: Optional[list[dict[str, Any]]] = None,
+) -> str:
+    contacts_shared = overview["contacts_shared"]
+    users_total = overview["users_total"]
+    lines = [
+        "<b>Admin analytics</b>",
+        f"Всего пользователей: <b>{users_total}</b>",
+        f"Активных: <b>{overview['users_active']}</b>",
+        f"Заблокировали бота: <b>{overview['users_blocked']}</b>",
+        f"Новых за 24 часа: <b>{overview.get('users_last_24h', 0)}</b>",
+        f"Новых за 7 дней: <b>{overview.get('users_last_7d', 0)}</b>",
+        f"Контактов получено: <b>{contacts_shared}</b> ({format_percent(contacts_shared, users_total)})",
+        f"Контактов за 7 дней: <b>{overview.get('contacts_last_7d', 0)}</b>",
+        f"Discord-инвайтов выдано: <b>{overview['discord_invites_sent']}</b>",
+        f"Стартов всего: <b>{overview.get('starts_total', 0)}</b>",
+        f"Событий в журнале: <b>{overview['events_total']}</b>",
+    ]
+
+    lines.append("")
+    lines.append("<b>Источники / сегменты</b>")
+    if sources:
+        for source in sources:
+            source_name = str(source.get("source") or "direct")
+            source_users = int(source.get("users_total") or 0)
+            source_contacts = int(source.get("contacts_shared") or 0)
+            lines.append(
+                f"{escape(source_name)}: <b>{source_users}</b> users, "
+                f"{source_contacts} contacts ({format_percent(source_contacts, source_users)})"
+            )
+    else:
+        lines.append("Пока нет данных по источникам.")
+
+    lines.extend(
+        [
+            "",
+            "<b>Как трекать ссылки</b>",
+            "Используй deep-link payload после <code>?start=</code>:",
+            "<code>https://t.me/&lt;bot_username&gt;?start=instagram</code>",
+            "<code>https://t.me/&lt;bot_username&gt;?start=utm_source_instagram</code>",
+            "Бот сохранит сегмент при первом /start и покажет его здесь.",
+        ]
     )
+    return "\n".join(lines)
+
+
+def format_percent(part: int, total: int) -> str:
+    if total <= 0:
+        return "0%"
+    return f"{part * 100 / total:.0f}%"
 
 
 def payload_from_draft(draft: dict[str, Any]) -> Optional[Payload]:

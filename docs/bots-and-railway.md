@@ -105,12 +105,13 @@ railway.cmd logs --service "bootcamp-discord-bot" --environment "production" --l
 Admin-команды Telegram:
 
 - `/admin_help` - список команд.
+- `/admin` - аналитика пользователей, контактов и источников/сегментов.
 - `/post` - основной мастер: пост всем сейчас, рассылка по сегментам или запланировать отправку пользователям бота.
 - `/drop_post`, `drop post`, `дроп пост`, `/new_post`, `/newpost` или `new post` - старые алиасы мастера `/post`.
 - `/manage` - список запланированных отправок с кнопками удаления.
 - `/all_post` или `all post` - список запланированных публикаций.
 - `/delete ID` или `delete ID` - отменить запланированную публикацию.
-- `/analytics` или `analytics` - краткая аналитика Telegram-бота.
+- `/analytics` или `analytics` - алиас отчета `/admin`.
 - `/post текст` - создать preview и отправить пользователям бота только после подтверждения.
 - `/post` ответом на фото/альбом/видео/PDF - создать preview этого медиа и отправить пользователям бота только после подтверждения.
 - Фото/видео/PDF с caption `/post текст` - создать preview медиа с подписью, без отдельной команды.
@@ -159,6 +160,13 @@ Contact gate:
 - Contact saving uses SQLite upsert, so contact messages create or update the user row atomically.
 - Added `/discord` (alias `/access`) to resend the Discord invite on demand.
 - Contact prompt is rate-limited (`last_contact_prompt_at`) so the bot does not spam "share phone" on every message.
+
+Traffic tracking:
+
+- Для источников используются Telegram deep links: `https://t.me/<bot_username>?start=instagram`.
+- Для UTM-like сегментов удобно использовать безопасный payload без `&`: `https://t.me/<bot_username>?start=utm_source_instagram`.
+- Бот сохраняет первый найденный источник в `users.source`; прямые заходы в `/admin` отображаются как `direct`.
+- `/admin` группирует пользователей по source и показывает users/contacts/conversion по каждому сегменту.
 
 Время в командах планирования вводится в timezone `Europe/Kiev`. Задания хранятся в SQLite table `scheduled_jobs` и выполняются фоновым worker внутри Telegram-сервиса.
 

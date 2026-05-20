@@ -83,6 +83,47 @@ class EventStorageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(start_payload, "utm_source=instagram&campaign=bootcamp")
         self.assertEqual(source, "instagram")
 
+    async def test_tracks_sources_for_admin_analytics(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            database_path = Path(tmp_dir) / "bot.sqlite3"
+            storage = EventStorage(database_path)
+            await storage.init()
+
+            await storage.record_start(
+                User(id=1002, is_bot=False, first_name="Dana"),
+                "utm_source_instagram",
+            )
+            await storage.record_start(
+                User(id=1003, is_bot=False, first_name="Mira"),
+                "source=facebook&campaign=bootcamp",
+            )
+            await storage.record_start(User(id=1004, is_bot=False, first_name="No UTM"))
+
+            sources = await storage.analytics_sources()
+
+        counts = {row["source"]: row["users_total"] for row in sources}
+        self.assertEqual(counts["instagram"], 1)
+        self.assertEqual(counts["facebook"], 1)
+        self.assertEqual(counts["direct"], 1)
+
+    async def test_preserves_first_known_source_on_repeat_start(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            database_path = Path(tmp_dir) / "bot.sqlite3"
+            storage = EventStorage(database_path)
+            await storage.init()
+
+            user = User(id=1006, is_bot=False, first_name="Nika")
+            await storage.record_start(user, "utm_source_instagram")
+            await storage.record_start(user, "utm_source_youtube")
+
+            with closing(connect(database_path)) as db:
+                source = db.execute(
+                    "SELECT source FROM users WHERE telegram_id = ?",
+                    (user.id,),
+                ).fetchone()[0]
+
+        self.assertEqual(source, "instagram")
+
     async def test_save_contact_upserts_user_without_prior_start(self) -> None:
         with TemporaryDirectory() as tmp_dir:
             database_path = Path(tmp_dir) / "bot.sqlite3"
