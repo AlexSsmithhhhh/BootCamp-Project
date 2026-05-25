@@ -8,6 +8,7 @@ from tempfile import TemporaryDirectory
 
 from aiogram.types import Contact, User
 
+from app.quiz import CATEGORY_LABELS, SYSTEM_GAP, tag_for_result
 from app.storage import EventStorage
 
 
@@ -279,6 +280,61 @@ class EventStorageTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("payload", columns)
         self.assertEqual(json.loads(draft["payload"])["text"], "Migrated draft")
+
+    async def test_quiz_attempt_lifecycle(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            database_path = Path(tmp_dir) / "bot.sqlite3"
+            storage = EventStorage(database_path)
+            await storage.init()
+
+            user = User(id=1007, is_bot=False, first_name="Quiz")
+            attempt = await storage.start_quiz_attempt(user)
+            updated_attempt = await storage.record_quiz_answer(
+                user=user,
+                attempt_id=attempt["id"],
+                question_index=0,
+                answer_key="A",
+                category=SYSTEM_GAP,
+                category_label=CATEGORY_LABELS[SYSTEM_GAP],
+            )
+            completed_attempt = await storage.complete_quiz_attempt(
+                user=user,
+                attempt_id=attempt["id"],
+                result_key=SYSTEM_GAP,
+                result_tag=tag_for_result(SYSTEM_GAP),
+                scores={SYSTEM_GAP: 1},
+            )
+            latest_completed = await storage.latest_completed_quiz_attempt(user.id)
+            with closing(connect(database_path)) as db:
+                quiz_result_key, quiz_result_tag, quiz_scores = db.execute(
+                    """
+                    SELECT quiz_result_key, quiz_result_tag, quiz_scores
+                    FROM users
+                    WHERE telegram_id = ?
+                    """,
+                    (user.id,),
+                ).fetchone()
+                stored_tag, tag_source, tag_metadata = db.execute(
+                    """
+                    SELECT tag, source, metadata
+                    FROM user_tags
+                    WHERE telegram_id = ?
+                    """,
+                    (user.id,),
+                ).fetchone()
+
+        self.assertEqual(attempt["status"], "in_progress")
+        self.assertEqual(updated_attempt["current_question_index"], 1)
+        self.assertEqual(updated_attempt["answers"][0]["answer_key"], "A")
+        self.assertEqual(updated_attempt["scores"][SYSTEM_GAP], 1)
+        self.assertEqual(completed_attempt["status"], "completed")
+        self.assertEqual(latest_completed["result_key"], SYSTEM_GAP)
+        self.assertEqual(quiz_result_key, SYSTEM_GAP)
+        self.assertEqual(quiz_result_tag, "system_gap")
+        self.assertEqual(json.loads(quiz_scores), {SYSTEM_GAP: 1})
+        self.assertEqual(stored_tag, "system_gap")
+        self.assertEqual(tag_source, "quiz_result")
+        self.assertEqual(json.loads(tag_metadata)["result_key"], SYSTEM_GAP)
 
     async def test_user_has_contact_when_event_exists_without_user_contact_fields(self) -> None:
         with TemporaryDirectory() as tmp_dir:

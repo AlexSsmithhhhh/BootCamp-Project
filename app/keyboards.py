@@ -6,6 +6,13 @@ from aiogram.types import (
 )
 
 from app import content
+from app.quiz import QuizQuestion
+
+
+WELCOME_STREAMS_CALLBACK = "welcome:streams"
+WELCOME_SCHEDULE_CALLBACK = "welcome:schedule"
+QUIZ_START_CALLBACK = "quiz:start"
+QUIZ_ANSWER_PREFIX = "quiz:answer"
 
 
 def contact_keyboard() -> ReplyKeyboardMarkup:
@@ -20,6 +27,62 @@ def contact_keyboard() -> ReplyKeyboardMarkup:
         ],
         resize_keyboard=True,
         one_time_keyboard=True,
+    )
+
+
+def welcome_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=content.WELCOME_STREAMS_BUTTON_TEXT,
+                    callback_data=WELCOME_STREAMS_CALLBACK,
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=content.WELCOME_SCHEDULE_BUTTON_TEXT,
+                    callback_data=WELCOME_SCHEDULE_CALLBACK,
+                )
+            ],
+        ]
+    )
+
+
+def quiz_start_keyboard(
+    button_text: str = content.START_QUIZ_BUTTON_TEXT,
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=button_text,
+                    callback_data=QUIZ_START_CALLBACK,
+                )
+            ]
+        ]
+    )
+
+
+def quiz_answer_callback(question_index: int, answer_key: str) -> str:
+    return f"{QUIZ_ANSWER_PREFIX}:{question_index}:{answer_key}"
+
+
+def quiz_answer_keyboard(
+    question_index: int,
+    question: QuizQuestion,
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=option.key,
+                    callback_data=quiz_answer_callback(question_index, option.key),
+                )
+                for option in question.options[index : index + 3]
+            ]
+            for index in range(0, len(question.options), 3)
+        ]
     )
 
 

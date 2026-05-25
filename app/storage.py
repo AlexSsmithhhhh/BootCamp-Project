@@ -98,12 +98,45 @@ class EventStorage:
             )
             await db.execute(
                 """
+                CREATE TABLE IF NOT EXISTS quiz_attempts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    telegram_id INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    current_question_index INTEGER NOT NULL DEFAULT 0,
+                    answers TEXT NOT NULL DEFAULT '[]',
+                    scores TEXT NOT NULL DEFAULT '{}',
+                    result_key TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    completed_at TEXT,
+                    FOREIGN KEY (telegram_id) REFERENCES users (telegram_id)
+                )
+                """
+            )
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_tags (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    telegram_id INTEGER NOT NULL,
+                    tag TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    metadata TEXT,
+                    assigned_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (telegram_id) REFERENCES users (telegram_id),
+                    UNIQUE (telegram_id, source)
+                )
+                """
+            )
+            await db.execute(
+                """
                 CREATE INDEX IF NOT EXISTS idx_events_telegram_id_created_at
                 ON events (telegram_id, created_at)
                 """
             )
             await self._ensure_user_contact_columns(db)
             await self._ensure_user_analytics_columns(db)
+            await self._ensure_user_quiz_columns(db)
             await self._ensure_scheduled_job_columns(db)
             await self._ensure_admin_post_draft_columns(db)
             await db.execute(
@@ -140,6 +173,24 @@ class EventStorage:
                 """
                 CREATE INDEX IF NOT EXISTS idx_admin_media_cache_admin_group
                 ON admin_media_cache (admin_id, media_group_id, message_id)
+                """
+            )
+            await db.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_quiz_attempts_user_status_updated
+                ON quiz_attempts (telegram_id, status, updated_at)
+                """
+            )
+            await db.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_user_tags_tag_source
+                ON user_tags (tag, source)
+                """
+            )
+            await db.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_users_quiz_result_tag
+                ON users (quiz_result_tag)
                 """
             )
             await db.commit()
@@ -470,6 +521,270 @@ class EventStorage:
             await db.commit()
 
         await self.add_event(user.id, "contact_prompt_sent")
+
+    async def start_quiz_attempt(self, user: User) -> dict[str, Any]:
+        await self.ensure_user(user)
+        now = _utc_now()
+        async with aiosqlite.connect(self.database_path) as db:
+            await db.execute(
+                """
+                UPDATE quiz_attempts
+                SET status = 'abandoned',
+                    updated_at = ?
+                WHERE telegram_id = ?
+                  AND status = 'in_progress'
+                """,
+                (now, user.id),
+            )
+            cursor = await db.execute(
+                """
+                INSERT INTO quiz_attempts (
+                    telegram_id, status, current_question_index, answers, scores,
+                    created_at, updated_at
+                )
+                VALUES (?, 'in_progress', 0, '[]', '{}', ?, ?)
+                """,
+                (user.id, now, now),
+            )
+            await db.commit()
+            attempt_id = int(cursor.lastrowid)
+
+        await self.add_event(user.id, "quiz_started", {"attempt_id": attempt_id})
+        attempt = await self.quiz_attempt(attempt_id)
+        if attempt is None:
+            raise RuntimeError("Quiz attempt was not created")
+        return attempt
+
+    async def quiz_attempt(self, attempt_id: int) -> Optional[dict[str, Any]]:
+        async with aiosqlite.connect(self.database_path) as db:
+            db.row_factory = aiosqlite.Row
+            row = await _fetch_one(
+                db,
+                """
+                SELECT *
+                FROM quiz_attempts
+                WHERE id = ?
+                """,
+                (attempt_id,),
+            )
+        if row is None:
+            return None
+        return _quiz_attempt_from_row(row)
+
+    async def active_quiz_attempt(self, telegram_id: int) -> Optional[dict[str, Any]]:
+        async with aiosqlite.connect(self.database_path) as db:
+            db.row_factory = aiosqlite.Row
+            row = await _fetch_one(
+                db,
+                """
+                SELECT *
+                FROM quiz_attempts
+                WHERE telegram_id = ?
+                  AND status = 'in_progress'
+                ORDER BY updated_at DESC, id DESC
+                LIMIT 1
+                """,
+                (telegram_id,),
+            )
+        if row is None:
+            return None
+        return _quiz_attempt_from_row(row)
+
+    async def latest_completed_quiz_attempt(
+        self,
+        telegram_id: int,
+    ) -> Optional[dict[str, Any]]:
+        async with aiosqlite.connect(self.database_path) as db:
+            db.row_factory = aiosqlite.Row
+            row = await _fetch_one(
+                db,
+                """
+                SELECT *
+                FROM quiz_attempts
+                WHERE telegram_id = ?
+                  AND status = 'completed'
+                ORDER BY completed_at DESC, id DESC
+                LIMIT 1
+                """,
+                (telegram_id,),
+            )
+        if row is None:
+            return None
+        return _quiz_attempt_from_row(row)
+
+    async def record_quiz_answer(
+        self,
+        *,
+        user: User,
+        attempt_id: int,
+        question_index: int,
+        answer_key: str,
+        category: str,
+        category_label: str,
+    ) -> dict[str, Any]:
+        attempt = await self.quiz_attempt(attempt_id)
+        if attempt is None:
+            raise ValueError(f"Quiz attempt {attempt_id} does not exist")
+        if attempt["telegram_id"] != user.id:
+            raise ValueError("Quiz attempt belongs to another user")
+        if attempt["status"] != "in_progress":
+            raise ValueError("Quiz attempt is not in progress")
+        if attempt["current_question_index"] != question_index:
+            raise ValueError("Quiz question index is stale")
+
+        answers = list(attempt["answers"])
+        scores = dict(attempt["scores"])
+        answers.append(
+            {
+                "question_index": question_index,
+                "answer_key": answer_key,
+                "category": category,
+            }
+        )
+        scores[category] = int(scores.get(category, 0)) + 1
+        now = _utc_now()
+        next_question_index = question_index + 1
+        async with aiosqlite.connect(self.database_path) as db:
+            await db.execute(
+                """
+                UPDATE quiz_attempts
+                SET current_question_index = ?,
+                    answers = ?,
+                    scores = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    next_question_index,
+                    json.dumps(answers, ensure_ascii=False, sort_keys=True),
+                    json.dumps(scores, ensure_ascii=False, sort_keys=True),
+                    now,
+                    attempt_id,
+                ),
+            )
+            await db.commit()
+
+        await self.add_event(
+            user.id,
+            "quiz_answered",
+            {
+                "attempt_id": attempt_id,
+                "question_index": question_index,
+                "answer_key": answer_key,
+                "category": category,
+                "category_label": category_label,
+            },
+        )
+        updated_attempt = await self.quiz_attempt(attempt_id)
+        if updated_attempt is None:
+            raise RuntimeError("Quiz attempt disappeared after answer")
+        return updated_attempt
+
+    async def complete_quiz_attempt(
+        self,
+        *,
+        user: User,
+        attempt_id: int,
+        result_key: str,
+        result_tag: Optional[str] = None,
+        scores: dict[str, int],
+    ) -> dict[str, Any]:
+        now = _utc_now()
+        serialized_scores = json.dumps(scores, ensure_ascii=False, sort_keys=True)
+        async with aiosqlite.connect(self.database_path) as db:
+            await db.execute(
+                """
+                UPDATE quiz_attempts
+                SET status = 'completed',
+                    result_key = ?,
+                    scores = ?,
+                    completed_at = ?,
+                    updated_at = ?
+                WHERE id = ?
+                  AND telegram_id = ?
+                """,
+                (
+                    result_key,
+                    serialized_scores,
+                    now,
+                    now,
+                    attempt_id,
+                    user.id,
+                ),
+            )
+            await db.execute(
+                """
+                UPDATE users
+                SET quiz_result_key = ?,
+                    quiz_result_tag = ?,
+                    quiz_scores = ?,
+                    quiz_completed_at = ?,
+                    last_interaction_at = ?
+                WHERE telegram_id = ?
+                """,
+                (
+                    result_key,
+                    result_tag,
+                    serialized_scores,
+                    now,
+                    now,
+                    user.id,
+                ),
+            )
+            if result_tag is not None:
+                await db.execute(
+                    """
+                    INSERT INTO user_tags (
+                        telegram_id, tag, source, metadata, assigned_at, updated_at
+                    )
+                    VALUES (?, ?, 'quiz_result', ?, ?, ?)
+                    ON CONFLICT(telegram_id, source) DO UPDATE SET
+                        tag = excluded.tag,
+                        metadata = excluded.metadata,
+                        updated_at = excluded.updated_at
+                    """,
+                    (
+                        user.id,
+                        result_tag,
+                        json.dumps(
+                            {
+                                "attempt_id": attempt_id,
+                                "result_key": result_key,
+                                "scores": scores,
+                            },
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        now,
+                        now,
+                    ),
+                )
+            await db.commit()
+
+        await self.add_event(
+            user.id,
+            "quiz_completed",
+            {
+                "attempt_id": attempt_id,
+                "result_key": result_key,
+                "result_tag": result_tag,
+                "scores": scores,
+            },
+        )
+        if result_tag is not None:
+            await self.add_event(
+                user.id,
+                "user_tag_assigned",
+                {
+                    "tag": result_tag,
+                    "source": "quiz_result",
+                    "attempt_id": attempt_id,
+                },
+            )
+        attempt = await self.quiz_attempt(attempt_id)
+        if attempt is None:
+            raise RuntimeError("Quiz attempt disappeared after completion")
+        return attempt
 
     async def create_scheduled_job(
         self,
@@ -855,6 +1170,20 @@ class EventStorage:
             if column_name not in existing_columns:
                 await db.execute(f"ALTER TABLE users ADD COLUMN {column_name} {column_type}")
 
+    async def _ensure_user_quiz_columns(self, db: aiosqlite.Connection) -> None:
+        async with db.execute("PRAGMA table_info(users)") as cursor:
+            existing_columns = {row[1] for row in await cursor.fetchall()}
+
+        required_columns = {
+            "quiz_result_key": "TEXT",
+            "quiz_result_tag": "TEXT",
+            "quiz_scores": "TEXT",
+            "quiz_completed_at": "TEXT",
+        }
+        for column_name, column_type in required_columns.items():
+            if column_name not in existing_columns:
+                await db.execute(f"ALTER TABLE users ADD COLUMN {column_name} {column_type}")
+
     async def _ensure_scheduled_job_columns(self, db: aiosqlite.Connection) -> None:
         async with db.execute("PRAGMA table_info(scheduled_jobs)") as cursor:
             existing_columns = {row[1] for row in await cursor.fetchall()}
@@ -897,6 +1226,22 @@ def _user_values(user: User) -> tuple[int, Optional[str], str, Optional[str], Op
         user.last_name,
         user.language_code,
     )
+
+
+def _quiz_attempt_from_row(row: aiosqlite.Row) -> dict[str, Any]:
+    attempt = dict(row)
+    attempt["answers"] = _json_object(attempt.get("answers"), default=[])
+    attempt["scores"] = _json_object(attempt.get("scores"), default={})
+    return attempt
+
+
+def _json_object(value: Optional[str], *, default: Any) -> Any:
+    if not value:
+        return default
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return default
 
 
 def _utc_now() -> str:
