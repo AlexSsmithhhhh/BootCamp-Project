@@ -16,6 +16,10 @@ class RouterOrderTests(unittest.TestCase):
             callback_names.index("handle_admin_post_draft_message"),
         )
         self.assertLess(
+            callback_names.index("handle_contact_button_request"),
+            callback_names.index("handle_admin_post_draft_message"),
+        )
+        self.assertLess(
             callback_names.index("handle_contact"),
             callback_names.index("handle_admin_post_draft_message"),
         )

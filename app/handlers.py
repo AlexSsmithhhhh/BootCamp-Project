@@ -110,7 +110,8 @@ async def send_contact_prompt(
     await message.answer(
         (
             "Контакт уже запрошен после результата диагностики. "
-            "Поделись номером через кнопку внизу чата, чтобы открыть доступ."
+            "Нажми кнопку <b>«Поделиться номером»</b> внизу чата. "
+            "Если кнопка пропала, отправь <code>/contact</code>."
         ),
         reply_markup=contact_keyboard(),
     )
@@ -323,6 +324,32 @@ async def handle_discord_link(
         content.DISCORD_REQUIRES_QUIZ_MESSAGE,
         reply_markup=quiz_start_keyboard(content.PASS_QUIZ_BUTTON_TEXT),
     )
+
+
+@router.message(Command("contact", "phone"))
+async def handle_contact_button_request(
+    message: Message,
+    storage: EventStorage,
+    settings: Settings,
+) -> None:
+    if message.from_user is None:
+        return
+
+    await storage.record_message_interaction(message.from_user, "contact_button_requested")
+    completed_attempt = await storage.latest_completed_quiz_attempt(message.from_user.id)
+    if completed_attempt is None:
+        await message.answer(
+            content.DISCORD_REQUIRES_QUIZ_MESSAGE,
+            reply_markup=quiz_start_keyboard(content.PASS_QUIZ_BUTTON_TEXT),
+        )
+        return
+
+    if await has_contact_access(storage, message.from_user.id):
+        await storage.mark_discord_access_sent(message.from_user)
+        await send_discord_access_flow(message, settings)
+        return
+
+    await send_contact_prompt(message, storage, force=True)
 
 
 @router.callback_query(F.data == DISCORD_OPEN_CALLBACK)

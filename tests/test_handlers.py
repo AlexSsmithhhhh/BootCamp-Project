@@ -9,6 +9,7 @@ from app.discord_invites import DiscordInvite
 from app.handlers import (
     format_quiz_result_message,
     handle_contact,
+    handle_contact_button_request,
     handle_discord_open,
     handle_discord_link,
     handle_fallback,
@@ -125,6 +126,54 @@ class DiscordAccessGateTests(unittest.IsolatedAsyncioTestCase):
         sent_text = message.answer.await_args.args[0]
         sent_keyboard = message.answer.await_args.kwargs["reply_markup"]
 
+        self.assertEqual(sent_text, content.DISCORD_REQUIRES_QUIZ_MESSAGE)
+        self.assertEqual(
+            sent_keyboard.inline_keyboard[0][0].callback_data,
+            QUIZ_START_CALLBACK,
+        )
+
+    async def test_contact_command_restores_contact_button_after_quiz(self) -> None:
+        user = SimpleNamespace(id=1003)
+        message = SimpleNamespace(from_user=user, answer=AsyncMock())
+        storage = SimpleNamespace(
+            record_message_interaction=AsyncMock(),
+            latest_completed_quiz_attempt=AsyncMock(return_value={"id": 1}),
+            user_has_contact=AsyncMock(return_value=False),
+            mark_contact_prompted=AsyncMock(),
+        )
+        settings = SimpleNamespace(discord_invite_url="https://discord.gg/test")
+
+        await handle_contact_button_request(message, storage, settings)
+
+        storage.record_message_interaction.assert_awaited_once_with(
+            user,
+            "contact_button_requested",
+        )
+        storage.mark_contact_prompted.assert_awaited_once_with(user)
+        message.answer.assert_awaited_once()
+        sent_text = message.answer.await_args.args[0]
+        sent_keyboard = message.answer.await_args.kwargs["reply_markup"]
+        self.assertEqual(sent_text, content.CONTACT_REQUIRED_MESSAGE)
+        self.assertIn("/contact", sent_text)
+        self.assertEqual(
+            sent_keyboard.keyboard[0][0].text,
+            content.SHARE_CONTACT_BUTTON_TEXT,
+        )
+
+    async def test_contact_command_routes_to_quiz_before_result(self) -> None:
+        user = SimpleNamespace(id=1004)
+        message = SimpleNamespace(from_user=user, answer=AsyncMock())
+        storage = SimpleNamespace(
+            record_message_interaction=AsyncMock(),
+            latest_completed_quiz_attempt=AsyncMock(return_value=None),
+        )
+        settings = SimpleNamespace(discord_invite_url="https://discord.gg/test")
+
+        await handle_contact_button_request(message, storage, settings)
+
+        message.answer.assert_awaited_once()
+        sent_text = message.answer.await_args.args[0]
+        sent_keyboard = message.answer.await_args.kwargs["reply_markup"]
         self.assertEqual(sent_text, content.DISCORD_REQUIRES_QUIZ_MESSAGE)
         self.assertEqual(
             sent_keyboard.inline_keyboard[0][0].callback_data,
