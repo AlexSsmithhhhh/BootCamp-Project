@@ -39,6 +39,15 @@ RESULT_TAGS = {
     NO_GAP: "no_gap",
 }
 
+ANSWER_DISPLAY_LABELS = {
+    "A": "1",
+    "B": "2",
+    "C": "3",
+    "D": "4",
+    "E": "5",
+    "F": "6",
+}
+
 
 @dataclass(frozen=True)
 class QuizOption:
@@ -337,16 +346,22 @@ def get_option(question_index: int, answer_key: str) -> QuizOption:
     raise ValueError(f"Unknown answer {answer_key!r} for question {question_index}")
 
 
+def answer_display_label(answer_key: str) -> str:
+    return ANSWER_DISPLAY_LABELS.get(answer_key.upper(), answer_key)
+
+
 def format_question(question_index: int) -> str:
     question = get_question(question_index)
     options = "\n\n".join(
-        f"<b>{option.key}.</b> {option.text}" for option in question.options
+        f"<b>{answer_display_label(option.key)}.</b> {option.text}"
+        for option in question.options
     )
     return (
-        f"<b>Вопрос {question_index + 1}/{question_count()}</b>\n"
+        f"<b>Вопрос {question_index + 1} из {question_count()}</b>\n\n"
         f"{question.text}\n\n"
+        "<b>Варианты ответа:</b>\n\n"
         f"{options}\n\n"
-        "Выбери вариант ниже:"
+        "Нажми номер ответа ниже."
     )
 
 

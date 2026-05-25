@@ -1,22 +1,39 @@
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from app import content
+from app.discord_invites import DiscordInvite
 from app.handlers import (
+    format_quiz_result_message,
+    handle_contact,
+    handle_discord_open,
     handle_discord_link,
     handle_fallback,
+    handle_quiz_answer,
+    handle_quiz_start,
     handle_start,
+    send_quiz_result_message,
     start_message_for_state,
 )
 from app.keyboards import (
+    DISCORD_OPEN_CALLBACK,
     QUIZ_START_CALLBACK,
     WELCOME_SCHEDULE_CALLBACK,
     WELCOME_STREAMS_CALLBACK,
+    quiz_answer_keyboard,
     quiz_start_keyboard,
     welcome_keyboard,
 )
-from app.quiz import EXECUTION_GAP, NO_GAP, ROUTINE_GAP, SYSTEM_GAP, score_quiz
+from app.quiz import (
+    EXECUTION_GAP,
+    NO_GAP,
+    ROUTINE_GAP,
+    SYSTEM_GAP,
+    format_question,
+    get_question,
+    score_quiz,
+)
 
 
 class StartFlowTests(unittest.TestCase):
@@ -58,6 +75,30 @@ class StartHandlerTests(unittest.IsolatedAsyncioTestCase):
             sent_keyboard.inline_keyboard[0][0].callback_data,
             QUIZ_START_CALLBACK,
         )
+
+    async def test_quiz_start_keeps_welcome_static_and_sends_first_question(self) -> None:
+        user = SimpleNamespace(id=1001)
+        message = SimpleNamespace(answer=AsyncMock(), edit_text=AsyncMock())
+        callback = SimpleNamespace(from_user=user, message=message, answer=AsyncMock())
+        storage = SimpleNamespace(
+            record_message_interaction=AsyncMock(),
+            start_quiz_attempt=AsyncMock(),
+        )
+
+        await handle_quiz_start(callback, storage)
+
+        storage.record_message_interaction.assert_awaited_once_with(
+            user,
+            "quiz_start_requested",
+        )
+        storage.start_quiz_attempt.assert_awaited_once_with(user)
+        message.edit_text.assert_not_called()
+        message.answer.assert_awaited_once()
+        sent_text = message.answer.await_args.args[0]
+        sent_keyboard = message.answer.await_args.kwargs["reply_markup"]
+        self.assertIn("Вопрос 1 из 7", sent_text)
+        self.assertEqual(sent_keyboard.inline_keyboard[0][0].callback_data, "quiz:answer:0:A")
+        callback.answer.assert_awaited_once_with("Начинаем диагностику")
 
 
 class DiscordAccessGateTests(unittest.IsolatedAsyncioTestCase):
@@ -119,6 +160,198 @@ class FallbackGateTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class ContactFlowTests(unittest.IsolatedAsyncioTestCase):
+    async def test_contact_unlocks_discord_button_only(self) -> None:
+        user = SimpleNamespace(id=3003)
+        contact = SimpleNamespace(user_id=3003)
+        message = SimpleNamespace(from_user=user, contact=contact, answer=AsyncMock())
+        storage = SimpleNamespace(
+            latest_completed_quiz_attempt=AsyncMock(return_value={"id": 1}),
+            save_contact=AsyncMock(),
+            mark_discord_access_sent=AsyncMock(),
+        )
+        settings = SimpleNamespace(discord_invite_url="https://discord.gg/test")
+
+        await handle_contact(message, storage, settings)
+
+        storage.save_contact.assert_awaited_once_with(user, contact)
+        storage.mark_discord_access_sent.assert_awaited_once_with(user)
+        self.assertEqual(message.answer.await_count, 1)
+
+        discord_message = message.answer.await_args_list[0]
+
+        self.assertEqual(discord_message.args[0], content.DISCORD_LINK_MESSAGE)
+        self.assertIn("Отлично, контакт получен", discord_message.args[0])
+        self.assertIn("#start-here", discord_message.args[0])
+        self.assertEqual(len(discord_message.kwargs["reply_markup"].inline_keyboard), 3)
+        self.assertEqual(
+            discord_message.kwargs["reply_markup"].inline_keyboard[0][0].text,
+            content.DISCORD_URL_BUTTON_TEXT,
+        )
+        self.assertEqual(
+            discord_message.kwargs["reply_markup"].inline_keyboard[0][0].callback_data,
+            DISCORD_OPEN_CALLBACK,
+        )
+        self.assertEqual(
+            discord_message.kwargs["reply_markup"].inline_keyboard[1][0].callback_data,
+            WELCOME_STREAMS_CALLBACK,
+        )
+        self.assertEqual(
+            discord_message.kwargs["reply_markup"].inline_keyboard[2][0].callback_data,
+            WELCOME_SCHEDULE_CALLBACK,
+        )
+
+    async def test_discord_open_callback_records_click_and_reveals_url(self) -> None:
+        user = SimpleNamespace(id=3004)
+        message = SimpleNamespace(edit_reply_markup=AsyncMock(), answer=AsyncMock())
+        callback = SimpleNamespace(from_user=user, message=message, answer=AsyncMock())
+        storage = SimpleNamespace(
+            latest_completed_quiz_attempt=AsyncMock(return_value={"id": 1}),
+            user_has_contact=AsyncMock(return_value=True),
+            mark_discord_open_clicked=AsyncMock(),
+        )
+        settings = SimpleNamespace(discord_invite_url="https://discord.gg/test")
+
+        await handle_discord_open(callback, storage, settings)
+
+        storage.mark_discord_open_clicked.assert_awaited_once_with(user)
+        message.edit_reply_markup.assert_awaited_once()
+        edited_keyboard = message.edit_reply_markup.await_args.kwargs["reply_markup"]
+
+        self.assertEqual(len(edited_keyboard.inline_keyboard), 3)
+        self.assertEqual(
+            edited_keyboard.inline_keyboard[0][0].text,
+            content.DISCORD_URL_BUTTON_TEXT,
+        )
+        self.assertEqual(
+            edited_keyboard.inline_keyboard[0][0].url,
+            "https://discord.gg/test",
+        )
+        self.assertEqual(
+            edited_keyboard.inline_keyboard[1][0].callback_data,
+            WELCOME_STREAMS_CALLBACK,
+        )
+        self.assertEqual(
+            edited_keyboard.inline_keyboard[2][0].callback_data,
+            WELCOME_SCHEDULE_CALLBACK,
+        )
+        callback.answer.assert_awaited_once_with("Ссылка готова")
+
+
+    async def test_discord_open_generates_unique_single_use_invite(self) -> None:
+        user = SimpleNamespace(id=3006)
+        message = SimpleNamespace(edit_reply_markup=AsyncMock(), answer=AsyncMock())
+        callback = SimpleNamespace(from_user=user, message=message, answer=AsyncMock())
+        storage = SimpleNamespace(
+            latest_completed_quiz_attempt=AsyncMock(return_value={"id": 1}),
+            user_has_contact=AsyncMock(return_value=True),
+            mark_discord_open_clicked=AsyncMock(),
+            latest_active_discord_invite=AsyncMock(return_value=None),
+            save_discord_invite=AsyncMock(),
+            mark_discord_invite_generation_failed=AsyncMock(),
+        )
+        settings = SimpleNamespace(
+            discord_invite_url="https://discord.gg/fallback",
+            discord_bot_token="discord-token",
+            discord_invite_channel_id="123456789",
+            discord_invite_max_age_seconds=3600,
+        )
+
+        with patch(
+            "app.handlers.create_discord_invite",
+            AsyncMock(return_value=DiscordInvite(code="unique-code", url="https://discord.gg/unique-code")),
+        ) as create_invite:
+            await handle_discord_open(callback, storage, settings)
+
+        create_invite.assert_awaited_once()
+        storage.save_discord_invite.assert_awaited_once()
+        saved_kwargs = storage.save_discord_invite.await_args.kwargs
+        self.assertEqual(saved_kwargs["invite_code"], "unique-code")
+        self.assertEqual(saved_kwargs["invite_url"], "https://discord.gg/unique-code")
+        self.assertEqual(saved_kwargs["channel_id"], "123456789")
+        self.assertEqual(saved_kwargs["max_uses"], 1)
+        self.assertEqual(saved_kwargs["max_age_seconds"], 3600)
+
+        edited_keyboard = message.edit_reply_markup.await_args.kwargs["reply_markup"]
+        self.assertEqual(
+            edited_keyboard.inline_keyboard[0][0].url,
+            "https://discord.gg/unique-code",
+        )
+
+
+class QuizResultMessageTests(unittest.TestCase):
+    def test_quiz_result_message_hides_score_summary_and_contact_hint(self) -> None:
+        text = format_quiz_result_message(
+            SYSTEM_GAP,
+            {
+                SYSTEM_GAP: 2,
+                ROUTINE_GAP: 1,
+                NO_GAP: 0,
+            },
+        )
+
+        self.assertIn("Твоя проблема", text)
+        self.assertIn("Твой результат", text)
+        self.assertIn("BootCamp Open Week", text)
+        self.assertNotIn("Распределение баллов", text)
+        self.assertNotIn("System Gap", text)
+        self.assertNotIn("оставить контакт", text)
+
+
+class QuizResultFlowTests(unittest.IsolatedAsyncioTestCase):
+    async def test_quiz_result_is_new_message_after_inline_test(self) -> None:
+        message = SimpleNamespace(edit_reply_markup=AsyncMock(), answer=AsyncMock())
+
+        await send_quiz_result_message(message, SYSTEM_GAP, {SYSTEM_GAP: 1})
+
+        message.edit_reply_markup.assert_awaited_once_with(reply_markup=None)
+        message.answer.assert_awaited_once()
+        sent_text = message.answer.await_args.args[0]
+        self.assertIn("Твоя проблема", sent_text)
+        self.assertIn("Твой результат", sent_text)
+
+    async def test_completed_quiz_always_requests_contact_for_full_flow(self) -> None:
+        user = SimpleNamespace(id=3005)
+        message = SimpleNamespace(edit_reply_markup=AsyncMock(), answer=AsyncMock())
+        callback = SimpleNamespace(
+            from_user=user,
+            message=message,
+            data="quiz:answer:6:A",
+            answer=AsyncMock(),
+        )
+        storage = SimpleNamespace(
+            active_quiz_attempt=AsyncMock(
+                return_value={
+                    "id": 44,
+                    "current_question_index": 6,
+                },
+            ),
+            record_quiz_answer=AsyncMock(
+                return_value={
+                    "id": 44,
+                    "current_question_index": 7,
+                    "answers": [
+                        {
+                            "question_index": 6,
+                            "answer_key": "A",
+                            "category": SYSTEM_GAP,
+                        }
+                    ],
+                },
+            ),
+            complete_quiz_attempt=AsyncMock(),
+            mark_contact_prompted=AsyncMock(),
+        )
+        settings = SimpleNamespace(discord_invite_url="https://discord.gg/test")
+
+        await handle_quiz_answer(callback, storage, settings)
+
+        storage.complete_quiz_attempt.assert_awaited_once()
+        storage.mark_contact_prompted.assert_awaited_once_with(user)
+        self.assertEqual(message.answer.await_count, 2)
+        self.assertEqual(message.answer.await_args_list[1].args[0], content.CONTACT_REQUIRED_MESSAGE)
+
+
 class PostQuizInfoKeyboardTests(unittest.TestCase):
     def test_welcome_keyboard_has_two_post_quiz_info_branches(self) -> None:
         keyboard = welcome_keyboard()
@@ -142,6 +375,32 @@ class PostQuizInfoKeyboardTests(unittest.TestCase):
             keyboard.inline_keyboard[0][0].callback_data,
             QUIZ_START_CALLBACK,
         )
+
+    def test_quiz_answer_keyboard_adds_back_button_after_first_question(self) -> None:
+        first_keyboard = quiz_answer_keyboard(0, get_question(0))
+        second_keyboard = quiz_answer_keyboard(1, get_question(1))
+
+        self.assertNotEqual(first_keyboard.inline_keyboard[-1][0].text, "⬅️ Назад")
+        self.assertEqual(second_keyboard.inline_keyboard[-1][0].text, "⬅️ Назад")
+        self.assertEqual(second_keyboard.inline_keyboard[-1][0].callback_data, "quiz:back:1")
+
+    def test_quiz_shows_numeric_answer_labels(self) -> None:
+        question_text = format_question(0)
+        keyboard = quiz_answer_keyboard(0, get_question(0))
+        button_texts = [
+            button.text
+            for row in keyboard.inline_keyboard
+            for button in row
+        ]
+
+        self.assertIn("<b>1.</b>", question_text)
+        self.assertIn("<b>6.</b>", question_text)
+        self.assertIn("<b>Вопрос 1 из 7</b>", question_text)
+        self.assertIn("<b>Варианты ответа:</b>", question_text)
+        self.assertIn("Нажми номер ответа ниже.", question_text)
+        self.assertNotIn("<b>A.</b>", question_text)
+        self.assertEqual(button_texts, ["1", "2", "3", "4", "5", "6"])
+        self.assertEqual(keyboard.inline_keyboard[0][0].callback_data, "quiz:answer:0:A")
 
 
 class QuizScoringTests(unittest.TestCase):

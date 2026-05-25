@@ -21,6 +21,9 @@ class Settings:
     telegram_admin_usernames: frozenset[str]
     telegram_channel_id: Optional[str]
     scheduler_poll_interval_seconds: int
+    discord_bot_token: Optional[str] = None
+    discord_invite_channel_id: Optional[str] = None
+    discord_invite_max_age_seconds: int = 604800
 
     @classmethod
     def from_env(cls, env_file: Optional[str | Path] = ".env") -> "Settings":
@@ -37,6 +40,15 @@ class Settings:
             "SCHEDULER_POLL_INTERVAL_SECONDS",
             30,
         )
+        discord_bot_token = _optional_env("DISCORD_BOT_TOKEN") or _optional_env("DISCORD_TOKEN")
+        discord_invite_channel_id = (
+            _optional_env("DISCORD_INVITE_CHANNEL_ID")
+            or _optional_env("START_HERE_CHANNEL_ID")
+        )
+        discord_invite_max_age_seconds = _optional_positive_int(
+            "DISCORD_INVITE_MAX_AGE_SECONDS",
+            604800,
+        )
 
         if not discord_invite_url.startswith(("https://", "http://")):
             raise ConfigurationError("DISCORD_INVITE_URL must be a valid http(s) URL.")
@@ -49,6 +61,9 @@ class Settings:
             telegram_admin_usernames=telegram_admin_usernames,
             telegram_channel_id=telegram_channel_id,
             scheduler_poll_interval_seconds=scheduler_poll_interval_seconds,
+            discord_bot_token=discord_bot_token,
+            discord_invite_channel_id=discord_invite_channel_id,
+            discord_invite_max_age_seconds=discord_invite_max_age_seconds,
         )
 
 

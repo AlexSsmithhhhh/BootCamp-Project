@@ -130,6 +130,24 @@ class EventStorage:
             )
             await db.execute(
                 """
+                CREATE TABLE IF NOT EXISTS discord_invites (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    telegram_id INTEGER NOT NULL,
+                    invite_code TEXT NOT NULL UNIQUE,
+                    invite_url TEXT NOT NULL,
+                    channel_id TEXT,
+                    max_uses INTEGER NOT NULL DEFAULT 1,
+                    max_age_seconds INTEGER,
+                    status TEXT NOT NULL DEFAULT 'active',
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT,
+                    last_error TEXT,
+                    FOREIGN KEY (telegram_id) REFERENCES users (telegram_id)
+                )
+                """
+            )
+            await db.execute(
+                """
                 CREATE INDEX IF NOT EXISTS idx_events_telegram_id_created_at
                 ON events (telegram_id, created_at)
                 """
@@ -191,6 +209,12 @@ class EventStorage:
                 """
                 CREATE INDEX IF NOT EXISTS idx_users_quiz_result_tag
                 ON users (quiz_result_tag)
+                """
+            )
+            await db.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_discord_invites_user_status_expires
+                ON discord_invites (telegram_id, status, expires_at, created_at)
                 """
             )
             await db.commit()
@@ -400,6 +424,121 @@ class EventStorage:
             await db.commit()
 
         await self.add_event(user.id, "discord_access_sent")
+
+    async def mark_discord_open_clicked(self, user: User) -> None:
+        await self.ensure_user(user)
+        now = _utc_now()
+        async with aiosqlite.connect(self.database_path) as db:
+            await db.execute(
+                """
+                UPDATE users
+                SET discord_open_clicked_at = COALESCE(discord_open_clicked_at, ?),
+                    last_interaction_at = ?
+                WHERE telegram_id = ?
+                """,
+                (now, now, user.id),
+            )
+            await db.commit()
+
+        await self.add_event(user.id, "discord_open_clicked")
+
+    async def latest_active_discord_invite(self, telegram_id: int) -> Optional[dict[str, Any]]:
+        now = _utc_now()
+        async with aiosqlite.connect(self.database_path) as db:
+            db.row_factory = aiosqlite.Row
+            row = await _fetch_one(
+                db,
+                """
+                SELECT *
+                FROM discord_invites
+                WHERE telegram_id = ?
+                  AND status = 'active'
+                  AND (expires_at IS NULL OR expires_at > ?)
+                ORDER BY created_at DESC, id DESC
+                LIMIT 1
+                """,
+                (telegram_id, now),
+            )
+        if row is None:
+            return None
+        return _discord_invite_from_row(row)
+
+    async def save_discord_invite(
+        self,
+        user: User,
+        *,
+        invite_code: str,
+        invite_url: str,
+        channel_id: Optional[str],
+        max_uses: int,
+        max_age_seconds: Optional[int],
+        expires_at: Optional[str],
+    ) -> dict[str, Any]:
+        await self.ensure_user(user)
+        now = _utc_now()
+        async with aiosqlite.connect(self.database_path) as db:
+            db.row_factory = aiosqlite.Row
+            await db.execute(
+                """
+                UPDATE discord_invites
+                SET status = 'replaced'
+                WHERE telegram_id = ?
+                  AND status = 'active'
+                  AND expires_at IS NOT NULL
+                  AND expires_at <= ?
+                """,
+                (user.id, now),
+            )
+            cursor = await db.execute(
+                """
+                INSERT INTO discord_invites (
+                    telegram_id, invite_code, invite_url, channel_id, max_uses,
+                    max_age_seconds, status, created_at, expires_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)
+                """,
+                (
+                    user.id,
+                    invite_code,
+                    invite_url,
+                    channel_id,
+                    max_uses,
+                    max_age_seconds,
+                    now,
+                    expires_at,
+                ),
+            )
+            row = await _fetch_one(
+                db,
+                "SELECT * FROM discord_invites WHERE id = ?",
+                (cursor.lastrowid,),
+            )
+            await db.commit()
+
+        await self.add_event(
+            user.id,
+            "discord_invite_generated",
+            {
+                "invite_code": invite_code,
+                "channel_id": channel_id,
+                "max_uses": max_uses,
+                "max_age_seconds": max_age_seconds,
+                "expires_at": expires_at,
+            },
+        )
+        if row is None:
+            raise RuntimeError("Discord invite disappeared after saving")
+        return _discord_invite_from_row(row)
+
+    async def mark_discord_invite_generation_failed(self, user: User, error: str) -> None:
+        await self.ensure_user(user)
+        await self.add_event(
+            user.id,
+            "discord_invite_generation_failed",
+            {
+                "error": error[:500],
+            },
+        )
 
     async def mark_delivery_failed(self, telegram_id: int, error: str) -> None:
         now = _utc_now()
@@ -678,6 +817,72 @@ class EventStorage:
         updated_attempt = await self.quiz_attempt(attempt_id)
         if updated_attempt is None:
             raise RuntimeError("Quiz attempt disappeared after answer")
+        return updated_attempt
+
+    async def rewind_quiz_attempt(
+        self,
+        *,
+        user: User,
+        attempt_id: int,
+        current_question_index: int,
+    ) -> dict[str, Any]:
+        attempt = await self.quiz_attempt(attempt_id)
+        if attempt is None:
+            raise ValueError(f"Quiz attempt {attempt_id} does not exist")
+        if attempt["telegram_id"] != user.id:
+            raise ValueError("Quiz attempt belongs to another user")
+        if attempt["status"] != "in_progress":
+            raise ValueError("Quiz attempt is not in progress")
+        if attempt["current_question_index"] != current_question_index:
+            raise ValueError("Quiz question index is stale")
+        if current_question_index <= 0:
+            raise ValueError("Quiz attempt is already at the first question")
+
+        answers = list(attempt["answers"])
+        if not answers:
+            raise ValueError("Quiz attempt has no answers to rewind")
+        removed_answer = answers.pop()
+        previous_question_index = current_question_index - 1
+        if int(removed_answer["question_index"]) != previous_question_index:
+            raise ValueError("Quiz answer history is inconsistent")
+
+        scores = dict(attempt["scores"])
+        removed_category = str(removed_answer["category"])
+        scores[removed_category] = max(0, int(scores.get(removed_category, 0)) - 1)
+        now = _utc_now()
+        async with aiosqlite.connect(self.database_path) as db:
+            await db.execute(
+                """
+                UPDATE quiz_attempts
+                SET current_question_index = ?,
+                    answers = ?,
+                    scores = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    previous_question_index,
+                    json.dumps(answers, ensure_ascii=False, sort_keys=True),
+                    json.dumps(scores, ensure_ascii=False, sort_keys=True),
+                    now,
+                    attempt_id,
+                ),
+            )
+            await db.commit()
+
+        await self.add_event(
+            user.id,
+            "quiz_answer_rewound",
+            {
+                "attempt_id": attempt_id,
+                "question_index": previous_question_index,
+                "answer_key": removed_answer["answer_key"],
+                "category": removed_category,
+            },
+        )
+        updated_attempt = await self.quiz_attempt(attempt_id)
+        if updated_attempt is None:
+            raise RuntimeError("Quiz attempt disappeared after rewind")
         return updated_attempt
 
     async def complete_quiz_attempt(
@@ -1163,6 +1368,7 @@ class EventStorage:
             "start_payload": "TEXT",
             "source": "TEXT",
             "discord_invite_sent_at": "TEXT",
+            "discord_open_clicked_at": "TEXT",
             "last_delivery_error": "TEXT",
             "last_delivery_error_at": "TEXT",
         }
@@ -1233,6 +1439,10 @@ def _quiz_attempt_from_row(row: aiosqlite.Row) -> dict[str, Any]:
     attempt["answers"] = _json_object(attempt.get("answers"), default=[])
     attempt["scores"] = _json_object(attempt.get("scores"), default={})
     return attempt
+
+
+def _discord_invite_from_row(row: aiosqlite.Row) -> dict[str, Any]:
+    return dict(row)
 
 
 def _json_object(value: Optional[str], *, default: Any) -> Any:

@@ -1,7 +1,7 @@
 import json
 import unittest
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from sqlite3 import connect
 from tempfile import TemporaryDirectory
@@ -83,6 +83,75 @@ class EventStorageTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(start_payload, "utm_source=instagram&campaign=bootcamp")
         self.assertEqual(source, "instagram")
+
+    async def test_records_discord_open_click(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            database_path = Path(tmp_dir) / "bot.sqlite3"
+            storage = EventStorage(database_path)
+            await storage.init()
+
+            user = User(id=1003, is_bot=False, first_name="Chris", username="chris")
+            await storage.mark_discord_open_clicked(user)
+
+            with closing(connect(database_path)) as db:
+                clicked_at = db.execute(
+                    """
+                    SELECT discord_open_clicked_at
+                    FROM users
+                    WHERE telegram_id = ?
+                    """,
+                    (user.id,),
+                ).fetchone()[0]
+                event_types = [
+                    row[0]
+                    for row in db.execute(
+                        "SELECT event_type FROM events ORDER BY id"
+                    ).fetchall()
+                ]
+
+        self.assertIsNotNone(clicked_at)
+        self.assertEqual(event_types, ["discord_open_clicked"])
+
+    async def test_saves_and_reuses_active_discord_invite(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            database_path = Path(tmp_dir) / "bot.sqlite3"
+            storage = EventStorage(database_path)
+            await storage.init()
+
+            user = User(id=1009, is_bot=False, first_name="Invite", username="invite")
+            expires_at = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+            await storage.save_discord_invite(
+                user,
+                invite_code="abc123",
+                invite_url="https://discord.gg/abc123",
+                channel_id="123456789",
+                max_uses=1,
+                max_age_seconds=3600,
+                expires_at=expires_at,
+            )
+
+            active_invite = await storage.latest_active_discord_invite(user.id)
+            with closing(connect(database_path)) as db:
+                invite_code, invite_url, status = db.execute(
+                    """
+                    SELECT invite_code, invite_url, status
+                    FROM discord_invites
+                    WHERE telegram_id = ?
+                    """,
+                    (user.id,),
+                ).fetchone()
+                event_types = [
+                    row[0]
+                    for row in db.execute(
+                        "SELECT event_type FROM events ORDER BY id"
+                    ).fetchall()
+                ]
+
+        self.assertEqual(invite_code, "abc123")
+        self.assertEqual(invite_url, "https://discord.gg/abc123")
+        self.assertEqual(status, "active")
+        self.assertEqual(active_invite["invite_url"], "https://discord.gg/abc123")
+        self.assertEqual(event_types, ["discord_invite_generated"])
 
     async def test_tracks_sources_for_admin_analytics(self) -> None:
         with TemporaryDirectory() as tmp_dir:
@@ -335,6 +404,34 @@ class EventStorageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stored_tag, "system_gap")
         self.assertEqual(tag_source, "quiz_result")
         self.assertEqual(json.loads(tag_metadata)["result_key"], SYSTEM_GAP)
+
+    async def test_quiz_attempt_can_rewind_last_answer(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            database_path = Path(tmp_dir) / "bot.sqlite3"
+            storage = EventStorage(database_path)
+            await storage.init()
+
+            user = User(id=1008, is_bot=False, first_name="Back")
+            attempt = await storage.start_quiz_attempt(user)
+            answered_attempt = await storage.record_quiz_answer(
+                user=user,
+                attempt_id=attempt["id"],
+                question_index=0,
+                answer_key="A",
+                category=SYSTEM_GAP,
+                category_label=CATEGORY_LABELS[SYSTEM_GAP],
+            )
+            rewound_attempt = await storage.rewind_quiz_attempt(
+                user=user,
+                attempt_id=attempt["id"],
+                current_question_index=answered_attempt["current_question_index"],
+            )
+
+        self.assertEqual(answered_attempt["current_question_index"], 1)
+        self.assertEqual(answered_attempt["scores"][SYSTEM_GAP], 1)
+        self.assertEqual(rewound_attempt["current_question_index"], 0)
+        self.assertEqual(rewound_attempt["answers"], [])
+        self.assertEqual(rewound_attempt["scores"][SYSTEM_GAP], 0)
 
     async def test_user_has_contact_when_event_exists_without_user_contact_fields(self) -> None:
         with TemporaryDirectory() as tmp_dir:

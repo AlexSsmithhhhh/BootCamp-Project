@@ -22,6 +22,9 @@ class SettingsTests(unittest.TestCase):
                 "DATABASE_PATH": str(database_path),
                 "TELEGRAM_ADMIN_IDS": "1001, 1002",
                 "TELEGRAM_CHANNEL_ID": "-1001234567890",
+                "DISCORD_BOT_TOKEN": "discord-token",
+                "DISCORD_INVITE_CHANNEL_ID": "123456789",
+                "DISCORD_INVITE_MAX_AGE_SECONDS": "3600",
             }
             with patch.dict(os.environ, env, clear=True):
                 settings = Settings.from_env(env_file=None)
@@ -32,6 +35,9 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings.telegram_admin_ids, frozenset({1001, 1002}))
         self.assertEqual(settings.telegram_channel_id, "-1001234567890")
         self.assertEqual(settings.scheduler_poll_interval_seconds, 30)
+        self.assertEqual(settings.discord_bot_token, "discord-token")
+        self.assertEqual(settings.discord_invite_channel_id, "123456789")
+        self.assertEqual(settings.discord_invite_max_age_seconds, 3600)
 
 
 if __name__ == "__main__":
