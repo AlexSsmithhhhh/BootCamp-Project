@@ -113,13 +113,7 @@ def discord_url_keyboard(discord_invite_url: str) -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
-                    text=content.WELCOME_STREAMS_BUTTON_TEXT,
-                    callback_data=WELCOME_STREAMS_CALLBACK,
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text=content.WELCOME_SCHEDULE_BUTTON_TEXT,
+                    text=content.DISCORD_SCHEDULE_BUTTON_TEXT,
                     callback_data=WELCOME_SCHEDULE_CALLBACK,
                 )
             ],
@@ -151,13 +145,7 @@ def discord_open_keyboard() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
-                    text=content.WELCOME_STREAMS_BUTTON_TEXT,
-                    callback_data=WELCOME_STREAMS_CALLBACK,
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text=content.WELCOME_SCHEDULE_BUTTON_TEXT,
+                    text=content.DISCORD_SCHEDULE_BUTTON_TEXT,
                     callback_data=WELCOME_SCHEDULE_CALLBACK,
                 )
             ],

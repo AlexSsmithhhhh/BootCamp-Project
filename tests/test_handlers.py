@@ -240,7 +240,7 @@ class ContactFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(discord_message.args[0], content.DISCORD_LINK_MESSAGE)
         self.assertIn("Отлично, контакт получен", discord_message.args[0])
         self.assertIn("#start-here", discord_message.args[0])
-        self.assertEqual(len(discord_message.kwargs["reply_markup"].inline_keyboard), 3)
+        self.assertEqual(len(discord_message.kwargs["reply_markup"].inline_keyboard), 2)
         self.assertEqual(
             discord_message.kwargs["reply_markup"].inline_keyboard[0][0].text,
             content.DISCORD_GENERATE_BUTTON_TEXT,
@@ -251,11 +251,11 @@ class ContactFlowTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             discord_message.kwargs["reply_markup"].inline_keyboard[1][0].callback_data,
-            WELCOME_STREAMS_CALLBACK,
+            WELCOME_SCHEDULE_CALLBACK,
         )
         self.assertEqual(
-            discord_message.kwargs["reply_markup"].inline_keyboard[2][0].callback_data,
-            WELCOME_SCHEDULE_CALLBACK,
+            discord_message.kwargs["reply_markup"].inline_keyboard[1][0].text,
+            content.DISCORD_SCHEDULE_BUTTON_TEXT,
         )
 
     async def test_discord_open_callback_records_click_and_reveals_url(self) -> None:
