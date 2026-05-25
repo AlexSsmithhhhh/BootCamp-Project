@@ -76,6 +76,7 @@ export class LeaderboardStorage {
         messagePoints: 0,
         reactionPoints: 0,
         stageAwarded: false,
+        stagePoints: 0,
       };
     }
     return user.daily[dateKey];
@@ -120,10 +121,11 @@ export class LeaderboardStorage {
     const user = this.user(userLike);
     const eventDate = dateFromMeta(meta);
     const daily = this.daily(user, this.todayKey(eventDate));
-    const award = Math.min(
-      scores.mentorReaction,
-      Math.max(0, scores.mentorReactionDailyCap - daily.reactionPoints),
-    );
+    const hasDailyCap = Number.isFinite(scores.mentorReactionDailyCap);
+    const remaining = hasDailyCap
+      ? Math.max(0, scores.mentorReactionDailyCap - daily.reactionPoints)
+      : scores.mentorReaction;
+    const award = Math.min(scores.mentorReaction, remaining);
     if (award <= 0) {
       return { awarded: 0, capped: true };
     }
@@ -181,12 +183,9 @@ export class LeaderboardStorage {
       await this.save();
       return { awarded: 0, durationMs, reason: 'too_short' };
     }
-    if (daily.stageAwarded) {
-      await this.save();
-      return { awarded: 0, durationMs, reason: 'daily_cap' };
-    }
 
     daily.stageAwarded = true;
+    daily.stagePoints = (daily.stagePoints || 0) + scores.stage;
     user.totalPoints += scores.stage;
     user.stats.stagePoints += scores.stage;
     user.stats.stageAwards += 1;
@@ -207,6 +206,36 @@ export class LeaderboardStorage {
       updatedAt: new Date().toISOString(),
     };
     await this.save();
+  }
+
+  async resetLeaderboardActivity() {
+    const summary = {
+      users: Object.keys(this.state.users).length,
+      events: this.state.events.length,
+      awardedMessages: Object.keys(this.state.awardedMessages).length,
+      awardedReactions: Object.keys(this.state.awardedReactions).length,
+    };
+
+    for (const user of Object.values(this.state.users)) {
+      user.totalPoints = 0;
+      user.daily = {};
+      user.stats = {
+        messagePoints: 0,
+        reactionPoints: 0,
+        stagePoints: 0,
+        manualPoints: 0,
+        contentMessages: 0,
+        mentorReactions: 0,
+        stageAwards: 0,
+      };
+      user.lastActiveAt = null;
+    }
+
+    this.state.events = [];
+    this.state.stageSessions = {};
+    this.state.resetAt = new Date().toISOString();
+    await this.save();
+    return summary;
   }
 
   async recordMemberJoin(userLike, meta = {}) {
@@ -280,7 +309,7 @@ export class LeaderboardStorage {
 
   leaderboard(limit = 10, { excludedUserIds = new Set() } = {}) {
     return Object.values(this.state.users)
-      .filter((user) => !excludedUserIds.has(user.id))
+      .filter((user) => !excludedUserIds.has(user.id) && user.totalPoints > 0)
       .sort((left, right) => {
         if (right.totalPoints !== left.totalPoints) {
           return right.totalPoints - left.totalPoints;
@@ -297,7 +326,7 @@ export class LeaderboardStorage {
       return null;
     }
     const rows = Object.values(this.state.users)
-      .filter((user) => !excludedUserIds.has(user.id))
+      .filter((user) => !excludedUserIds.has(user.id) && user.totalPoints > 0)
       .sort((left, right) => right.totalPoints - left.totalPoints);
     const index = rows.findIndex((user) => user.id === userId);
     return index === -1 ? null : index + 1;

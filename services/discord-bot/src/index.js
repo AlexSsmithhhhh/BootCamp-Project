@@ -12,6 +12,7 @@ import {
 } from 'discord.js';
 
 import { backfillLeaderboardHistory } from './backfill.js';
+import { syncAnnouncementPermissions } from './announcement-permissions.js';
 import { config } from './config.js';
 import {
   createLeaderboardEmbed,
@@ -102,6 +103,25 @@ client.once(Events.ClientReady, async () => {
     `Reaction roles: messageIds=${[...config.reactionRoles.messageIds].join(',') || 'auto'} ` +
       `channels=${[...config.reactionRoles.channelIds].join(',') || 'start-here by name'}`,
   );
+  console.log(
+    `Announcement permissions: enabled=${config.announcementPermissions.enabled} ` +
+      `channel=${config.announcementPermissions.channelId || config.announcementPermissions.channelNames.join('|')} ` +
+      `roles=${[...config.announcementPermissions.roleIds].join(',') || config.announcementPermissions.roleNames.join('|')}`,
+  );
+
+  try {
+    const announcementPermissions = await syncAnnouncementPermissions(client, config);
+    if (announcementPermissions.updated) {
+      console.log(
+        'Announcement permissions synced: ' +
+          `channel=${announcementPermissions.channelName} roles=${announcementPermissions.roleNames.join(', ')}`,
+      );
+    } else {
+      console.log(`Announcement permissions not synced: ${announcementPermissions.reason}`);
+    }
+  } catch (error) {
+    console.error('Failed to sync announcement permissions:', error);
+  }
 
   try {
     const backfill = await backfillLeaderboardHistory(client, storage, config);
@@ -409,6 +429,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
 async function main() {
   await storage.init();
+  if (config.resetOnStartup) {
+    const reset = await storage.resetLeaderboardActivity();
+    console.log(
+      'Leaderboard reset on startup: ' +
+        `users=${reset.users} events=${reset.events} ` +
+        `awardedMessagesPreserved=${reset.awardedMessages} ` +
+        `awardedReactionsPreserved=${reset.awardedReactions}`,
+    );
+  }
   await registerCommands();
   await client.login(config.token);
 }

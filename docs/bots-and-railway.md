@@ -234,9 +234,9 @@ railway.cmd deployment redeploy --service "bootcamp-discord-bot" --environment "
 
 - логинится по текущим Railway-переменным;
 - регистрирует guild slash-команды `ping`, `leaderboard`, `my-points`, `award-points`, `leaderboard-dashboard`;
-- считает +2 за содержательное сообщение в рабочих чатах, до 30 баллов в день;
-- считает +10 за ✅ или 🔥 от Mentor/Support, до 50 баллов в день;
-- считает +25 за stage от 15 минут, один раз в день;
+- считает +2 за содержательное сообщение в рабочих чатах, без дневного лимита;
+- считает +10 за любую реакцию от Mentor/Support, без дневного лимита;
+- считает +25 за каждую stage-сессию от 15 минут, без дневного лимита;
 - дает Mentor/Support вручную начислять баллы через `/award-points`;
 - скрывает пользователей с mentor/support-ролью из публичного leaderboard;
 - хранит данные в `/app/data/discord-leaderboard.json` на Railway volume;
@@ -254,14 +254,47 @@ railway.cmd deployment redeploy --service "bootcamp-discord-bot" --environment "
 - `LEADERBOARD_BACKFILL_MAX_MESSAGES_PER_CHANNEL` = `1000` by default.
 - `LEADERBOARD_MANUAL_AWARD_MAX_POINTS` = `100` by default.
 - роли Mentor/Support определяются по названиям ролей `Mentor`, `ментор`, `Support`, `саппорт`, `наставник`.
+- на старте бот синхронизирует права канала анонсов: роли Moderator/Модератор и Mentor/Ментор получают право писать в анонсы.
+
+Discord announcement permissions:
+
+- `ANNOUNCEMENT_PERMISSIONS_ENABLED` - включает синхронизацию прав анонсов, по умолчанию `true`.
+- `ANNOUNCEMENT_CHANNEL_ID` / `ANNOUNCEMENTS_CHANNEL_ID` / `DISCORD_ANNOUNCEMENT_CHANNEL_ID` - целевой канал анонсов. Для production лучше указать ID явно.
+- `ANNOUNCEMENT_CHANNEL_NAMES` - fallback-имена канала, если ID не задан. По умолчанию: `announcements`, `announcement`, `news`, `анонсы`, `анонс`, `объявления`.
+- `ANNOUNCEMENT_WRITER_ROLE_IDS` - comma-separated role IDs, которым разрешено писать.
+- `ANNOUNCEMENT_WRITER_ROLE_NAMES` - fallback-имена ролей. По умолчанию покрывает Moderator/Mod/Модератор и Mentor/Ментор/Наставник.
+- Для работы у роли бота должно быть право `Manage Channels`, а роль бота должна стоять выше редактируемых ролей в Discord hierarchy.
+
+One-off применение прав через Discord API:
+
+```powershell
+cd services\discord-bot
+npm run sync:announcements
+```
+
+Для проверки без изменений можно задать `ANNOUNCEMENT_DRY_RUN=true`.
 
 Discord reaction roles:
 
-- In `start-here`, 🗺 gives `Forex` + `Member`.
-- In `start-here`, 📈 gives `Crypto` + `Member`.
-- `Member` is the base access role and is always granted when a user chooses Forex or Crypto.
-- Removing a direction reaction removes only `Forex`/`Crypto`; `Member` stays because it opens access to the server.
+- In `start-here`, ↗️ gives `Forex` + `Trader`.
+- In `start-here`, 📈 gives `Crypto` + `Trader`.
+- `Trader` is the base access role and is always granted when a user chooses Forex or Crypto.
+- Removing a direction reaction removes only `Forex`/`Crypto`; `Trader` stays because it opens access to the server.
 - Optional env overrides: `REACTION_ROLE_MESSAGE_IDS`, `REACTION_ROLE_CHANNEL_IDS`, `REACTION_ROLE_MEMBER_ROLE_ID`, `REACTION_ROLE_FOREX_ROLE_ID`, `REACTION_ROLE_CRYPTO_ROLE_ID`.
+
+Start-here prompt cleanup:
+
+```powershell
+railway.cmd run --service "bootcamp-discord-bot" --environment "production" -- npm run sync:start-here
+```
+
+Recommended one-off variables:
+
+- `START_HERE_CHANNEL_ID` - exact `start-here` channel/thread ID.
+- `START_HERE_ANCHOR_MESSAGE_ID` - exact Smith message ID, so the script can report whether newer messages already exist below it.
+- `START_HERE_DRY_RUN=true` - dry run without deletion/posting.
+
+The script removes only bot-authored old prompt/welcome messages, posts the short direction-selection embed with the `🔒 Доступ к серверу откроется 1 июня 🚀` note, and adds ↗️/📈 reactions. If `REACTION_ROLE_MESSAGE_IDS` is set, update it to the new message ID printed by the script or remove it to use channel-based reaction roles.
 
 ## Безопасность
 

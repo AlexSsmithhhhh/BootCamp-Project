@@ -45,6 +45,18 @@ function optionalCap(name, fallback) {
   return value;
 }
 
+function optionalNullableCap(name, fallback) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === null || raw.trim() === '') {
+    return fallback;
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+  return value;
+}
+
 function optionalBoolean(name, fallback) {
   const value = process.env[name]?.trim().toLowerCase();
   if (!value) {
@@ -99,6 +111,7 @@ export const config = {
   updateEveryMs: optionalNumber('LEADERBOARD_UPDATE_EVERY_MS', 5 * 60 * 1000),
   publicLeaderboardLimit: optionalNumber('LEADERBOARD_PUBLIC_LIMIT', 5),
   backfillOnStartup: optionalBoolean('LEADERBOARD_BACKFILL_ON_STARTUP', true),
+  resetOnStartup: optionalBoolean('LEADERBOARD_RESET_ON_STARTUP', false),
   backfillDays: optionalNumber('LEADERBOARD_BACKFILL_DAYS', 14),
   backfillMaxMessagesPerChannel: optionalNumber('LEADERBOARD_BACKFILL_MAX_MESSAGES_PER_CHANNEL', 1000),
   messageMinLength: optionalNumber('LEADERBOARD_MESSAGE_MIN_LENGTH', 20),
@@ -106,17 +119,49 @@ export const config = {
   manualAwardMaxPoints: optionalNumber('LEADERBOARD_MANUAL_AWARD_MAX_POINTS', 100),
   stageMinMs: optionalNumber('LEADERBOARD_STAGE_MIN_MS', 15 * 60 * 1000),
   timeZone: process.env.LEADERBOARD_TIME_ZONE || 'Europe/Kiev',
+  announcementPermissions: {
+    enabled: optionalBoolean('ANNOUNCEMENT_PERMISSIONS_ENABLED', true),
+    channelId: optionalString(
+      'ANNOUNCEMENT_CHANNEL_ID',
+      'ANNOUNCEMENTS_CHANNEL_ID',
+      'DISCORD_ANNOUNCEMENT_CHANNEL_ID',
+    ),
+    channelNames: optionalCsvArray('ANNOUNCEMENT_CHANNEL_NAMES', [
+      'announcements',
+      'announcement',
+      'announces',
+      'news',
+      'анонсы',
+      'анонс',
+      'объявления',
+    ]),
+    roleIds: optionalCsv('ANNOUNCEMENT_WRITER_ROLE_IDS'),
+    roleNames: optionalCsvArray('ANNOUNCEMENT_WRITER_ROLE_NAMES', [
+      'Moderator',
+      'Moderators',
+      'Mod',
+      'модератор',
+      'модераторы',
+      'модер',
+      'Mentor',
+      'Mentors',
+      'ментор',
+      'менторы',
+      'наставник',
+      'наставники',
+    ]),
+  },
   reactionRoles: {
     messageIds: optionalCsv('REACTION_ROLE_MESSAGE_IDS'),
     channelIds: optionalCsv('REACTION_ROLE_CHANNEL_IDS'),
     memberRoleId: optionalString('REACTION_ROLE_MEMBER_ROLE_ID'),
-    memberRoleNames: optionalCsvArray('REACTION_ROLE_MEMBER_ROLE_NAMES', ['Member']),
+    memberRoleNames: optionalCsvArray('REACTION_ROLE_MEMBER_ROLE_NAMES', ['Trader', 'Member']),
     directions: [
       {
         key: 'forex',
         roleId: optionalString('REACTION_ROLE_FOREX_ROLE_ID'),
         roleNames: optionalCsvArray('REACTION_ROLE_FOREX_ROLE_NAMES', ['Forex']),
-        emojis: new Set(optionalCsvArray('REACTION_ROLE_FOREX_EMOJIS', ['\u{1F4C9}', '\u{1F5FA}'])),
+        emojis: new Set(optionalCsvArray('REACTION_ROLE_FOREX_EMOJIS', ['\u2197\uFE0F', '\u{1F4C9}', '\u{1F5FA}'])),
       },
       {
         key: 'crypto',
@@ -130,7 +175,7 @@ export const config = {
     message: 2,
     messageDailyCap: optionalCap('LEADERBOARD_MESSAGE_DAILY_CAP', null),
     mentorReaction: 10,
-    mentorReactionDailyCap: 50,
+    mentorReactionDailyCap: optionalNullableCap('LEADERBOARD_MENTOR_REACTION_DAILY_CAP', null),
     stage: 25,
   },
 };

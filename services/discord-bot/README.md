@@ -13,8 +13,8 @@
 ## Scoring
 
 - +2 балла за содержательное сообщение в рабочих чатах, без дневного лимита (антиспам-фильтр остается).
-- +10 баллов за реакцию ✅ или 🔥 от роли Mentor/Support, максимум 50 баллов в день.
-- +25 баллов за участие в stage от 15 минут, один раз в день.
+- +10 баллов за любую реакцию от роли Mentor/Support, без дневного лимита.
+- +25 баллов за каждую stage-сессию от 15 минут, без дневного лимита.
 - Роль `Mentor`, `ментор`, `Support`, `саппорт` или `наставник` может вручную начислять баллы командой `/award-points`.
 - Пользователи с mentor/support-ролью не отображаются в публичном leaderboard.
 - Публичный dashboard показывает топ-5 и кнопку `Мои баллы`, которая отвечает пользователю приватно даже в закрытом для сообщений канале.
@@ -32,14 +32,43 @@
 
 Данные хранятся в `/app/data/discord-leaderboard.json` на Railway volume.
 
+## Announcement Permissions
+
+At startup the bot syncs announcement-channel permissions so moderators and mentors can write there.
+
+Defaults:
+
+- channel is found by `ANNOUNCEMENT_CHANNEL_ID` if set, otherwise by common names: `announcements`, `announcement`, `news`, `анонсы`, `анонс`, `объявления`;
+- writer roles are found by `ANNOUNCEMENT_WRITER_ROLE_IDS` if set, otherwise by names like `Moderator`, `Mod`, `модератор`, `Mentor`, `ментор`, `наставник`.
+
+Optional Railway variables:
+
+- `ANNOUNCEMENT_PERMISSIONS_ENABLED` - set to `false` to disable this sync, default `true`.
+- `ANNOUNCEMENT_CHANNEL_ID` / `ANNOUNCEMENTS_CHANNEL_ID` / `DISCORD_ANNOUNCEMENT_CHANNEL_ID` - target announcements channel. Recommended for production.
+- `ANNOUNCEMENT_CHANNEL_NAMES` - comma-separated fallback channel names.
+- `ANNOUNCEMENT_WRITER_ROLE_IDS` - comma-separated role IDs allowed to write. Recommended if role names change.
+- `ANNOUNCEMENT_WRITER_ROLE_NAMES` - comma-separated fallback role names.
+
+The bot role must have `Manage Channels`, and its role must be above the roles it edits in Discord role hierarchy.
+
+To apply the same permissions once via Discord API:
+
+```powershell
+npm run sync:announcements
+```
+
+Optional variable for a dry run:
+
+- `ANNOUNCEMENT_DRY_RUN=true` - print target channel and roles without changing permissions.
+
 ## Reaction Roles
 
 In `start-here`, direction reactions grant access roles:
 
-- 🗺 -> `Forex` + `Member`
-- 📈 -> `Crypto` + `Member`
+- ↗️ -> `Forex` + `Trader`
+- 📈 -> `Crypto` + `Trader`
 
-`Member` is the base server access role. It is always added when a user chooses Forex or Crypto, and it is not removed if the user later removes a direction reaction. If a user selects both directions, the bot keeps `Member` and grants both `Forex` and `Crypto`.
+`Trader` is the base server access role. It is always added when a user chooses Forex or Crypto, and it is not removed if the user later removes a direction reaction. If a user selects both directions, the bot keeps `Trader` and grants both `Forex` and `Crypto`.
 
 Optional Railway variables:
 
@@ -48,6 +77,20 @@ Optional Railway variables:
 - `REACTION_ROLE_MEMBER_ROLE_ID` / `REACTION_ROLE_MEMBER_ROLE_NAMES` - base access role, default `Member`.
 - `REACTION_ROLE_FOREX_ROLE_ID` / `REACTION_ROLE_FOREX_ROLE_NAMES` / `REACTION_ROLE_FOREX_EMOJIS` - Forex direction, default role `Forex`, emoji 🗺.
 - `REACTION_ROLE_CRYPTO_ROLE_ID` / `REACTION_ROLE_CRYPTO_ROLE_NAMES` / `REACTION_ROLE_CRYPTO_EMOJIS` - Crypto direction, default role `Crypto`, emoji 📈.
+
+To clean up and repost the `start-here` prompt below Smith's message:
+
+```powershell
+railway.cmd run --service "bootcamp-discord-bot" --environment "production" -- npm run sync:start-here
+```
+
+Optional variables:
+
+- `START_HERE_CHANNEL_ID` - exact channel/thread ID. Recommended.
+- `START_HERE_ANCHOR_MESSAGE_ID` - exact Smith message ID. Recommended if there are many recent messages.
+- `START_HERE_DRY_RUN=true` - preview what would change without deleting or posting.
+
+The script deletes only bot-authored messages that contain the old welcome/start-here prompt, then posts the short direction-selection embed with the `🔒 Доступ к серверу откроется 1 июня 🚀` note and adds ↗️/📈 reactions. If `REACTION_ROLE_MESSAGE_IDS` is set, update it to the new message ID printed by the script, or remove that env variable so reaction roles work by channel.
 
 ## Local check
 

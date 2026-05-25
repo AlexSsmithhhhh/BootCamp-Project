@@ -5,7 +5,15 @@
   "type": "module",
   "scripts": {
     "start": "node src/index.js",
-    "check": "node --check src/index.js && node --check src/backfill.js && node --check src/config.js && node --check src/storage.js && node --check src/leaderboard.js && node --check src/reaction-roles.js && node --check scripts/inspect-guild.js && node --check scripts/inspect-dashboard.js"
+    "check": "node --check src/index.js && node --check src/announcement-permissions.js && node --check src/backfill.js && node --check src/config.js && node --check src/storage.js && node --check src/leaderboard.js && node --check src/reaction-roles.js && node --check scripts/inspect-guild.js && node --check scripts/inspect-dashboard.js && node --check scripts/sync-start-here.js && node --check scripts/sync-announcement-permissions.js && node --check scripts/sync-material-permissions.js && node --check scripts/sync-trader-onboarding-permissions.js && node --check scripts/clear-working-channel-messages.js && node --check scripts/sync-final-server-permissions.js && node --check scripts/verify-final-server-permissions.js && node --check scripts/sync-prestart-onboarding-only.js",
+    "sync:start-here": "node scripts/sync-start-here.js",
+    "sync:announcements": "node scripts/sync-announcement-permissions.js",
+    "sync:materials": "node scripts/sync-material-permissions.js",
+    "sync:trader-onboarding": "node scripts/sync-trader-onboarding-permissions.js",
+    "clear:working-channels": "node scripts/clear-working-channel-messages.js",
+    "sync:final-permissions": "node scripts/sync-final-server-permissions.js",
+    "verify:final-permissions": "node scripts/verify-final-server-permissions.js",
+    "sync:prestart-onboarding": "node scripts/sync-prestart-onboarding-only.js"
   },
   "dependencies": {
     "discord.js": "^14.19.3",

@@ -7,7 +7,6 @@ import {
   PermissionFlagsBits,
 } from 'discord.js';
 
-const POSITIVE_REACTIONS = new Set(['✅', '🔥']);
 const DEFAULT_IGNORED_CHANNEL_NAME = /(?:rules|announc|welcome|start|faq|guide|leaderboard|лидер|анонс|правил)/i;
 export const MY_POINTS_BUTTON_ID = 'leaderboard:my-points';
 
@@ -75,8 +74,8 @@ export function createPersonalEmbed(storage, config, userId, { excludedUserIds =
         value: user
           ? [
             `Сообщения: ${formatTodayProgress(today.messagePoints, config.scores.messageDailyCap)}`,
-            `Mentor/Support реакции: ${today.reactionPoints}/${config.scores.mentorReactionDailyCap}`,
-            `Stage: ${today.stageAwarded ? 'зачтён' : 'ещё нет'}`,
+            `Mentor/Support реакции: ${formatTodayProgress(today.reactionPoints, config.scores.mentorReactionDailyCap)}`,
+            `Stage: ${today.stagePoints || 0}`,
           ].join('\n')
           : 'Пока пусто.',
       },
@@ -95,7 +94,7 @@ export function createPersonalEmbed(storage, config, userId, { excludedUserIds =
 }
 
 export function isPositiveReaction(reaction) {
-  return POSITIVE_REACTIONS.has(reaction.emoji.name);
+  return Boolean(reaction.emoji?.name);
 }
 
 export function isMentorOrSupport(member, config) {

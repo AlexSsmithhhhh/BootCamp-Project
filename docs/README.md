@@ -7,6 +7,7 @@
 - [bots-and-railway.md](bots-and-railway.md) - основная рабочая документация по Telegram- и Discord-сервисам, Railway, переменным окружения, деплою и runbook.
 - [telegram-analytics-architecture.md](telegram-analytics-architecture.md) - архитектура аналитики Telegram-бота: таблицы, события, воронка, будущие отчеты.
 - [current-state.md](current-state.md) - короткое актуальное состояние проекта: что работает, где данные, что требует проверки.
+- [project-structure.md](project-structure.md) - карта репозитория: сервисы, файлы, flow, env, деплой и проверки.
 - [project-log.md](project-log.md) - журнал изменений, проверок и решений по датам.
 
 ## Как Вести Документацию
