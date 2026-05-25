@@ -147,7 +147,7 @@ CONTACT_RECEIVED_MESSAGE = (
     "Контакт сохранен. В следующий раз номер уже не попрошу."
 )
 
-CONTACT_KEYBOARD_REMOVED_MESSAGE = "Контакт получен. Открываю следующий шаг."
+CONTACT_KEYBOARD_REMOVAL_MESSAGE = "."
 
 DISCORD_LINK_MESSAGE = (
     "<b>Отлично, контакт получен.</b>\n\n"

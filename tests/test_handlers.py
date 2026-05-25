@@ -185,8 +185,9 @@ class ContactFlowTests(unittest.IsolatedAsyncioTestCase):
         cleanup_message = message.answer.await_args_list[0]
         discord_message = message.answer.await_args_list[1]
 
-        self.assertEqual(cleanup_message.args[0], content.CONTACT_KEYBOARD_REMOVED_MESSAGE)
+        self.assertEqual(cleanup_message.args[0], content.CONTACT_KEYBOARD_REMOVAL_MESSAGE)
         self.assertIsInstance(cleanup_message.kwargs["reply_markup"], ReplyKeyboardRemove)
+        message.answer.return_value.delete.assert_awaited_once()
         self.assertEqual(discord_message.args[0], content.DISCORD_LINK_MESSAGE)
         self.assertIn("Отлично, контакт получен", discord_message.args[0])
         self.assertIn("#start-here", discord_message.args[0])
@@ -306,8 +307,9 @@ class ManualPhoneEntryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(message.answer.await_count, 2)
         self.assertEqual(
             message.answer.await_args_list[0].args[0],
-            content.CONTACT_KEYBOARD_REMOVED_MESSAGE,
+            content.CONTACT_KEYBOARD_REMOVAL_MESSAGE,
         )
+        message.answer.return_value.delete.assert_awaited_once()
         self.assertEqual(message.answer.await_args_list[1].args[0], content.DISCORD_LINK_MESSAGE)
 
     async def test_manual_phone_entry_reprompts_on_partial_plus(self) -> None:

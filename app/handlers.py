@@ -527,10 +527,14 @@ async def send_discord_access_flow(message: Message, settings: Settings) -> None
 
 
 async def remove_contact_keyboard(message: Message) -> None:
-    await message.answer(
-        content.CONTACT_KEYBOARD_REMOVED_MESSAGE,
+    cleanup_message = await message.answer(
+        content.CONTACT_KEYBOARD_REMOVAL_MESSAGE,
         reply_markup=ReplyKeyboardRemove(),
     )
+    try:
+        await cleanup_message.delete()
+    except TelegramBadRequest as exc:
+        logger.info("Could not delete contact keyboard cleanup message: %s", exc)
 
 
 def looks_like_phone_entry(text: str | None) -> bool:
