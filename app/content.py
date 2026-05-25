@@ -141,6 +141,8 @@ CONTACT_RECEIVED_MESSAGE = (
     "Контакт сохранен. В следующий раз номер уже не попрошу."
 )
 
+CONTACT_KEYBOARD_REMOVED_MESSAGE = "Контакт получен. Открываю следующий шаг."
+
 DISCORD_LINK_MESSAGE = (
     "<b>Отлично, контакт получен.</b>\n\n"
     "Следующий шаг — нужно присоединиться к Discord-серверу <b>BootCamp Open Week</b>.\n\n"

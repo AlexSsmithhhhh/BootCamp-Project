@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandObject, CommandStart
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 
 from app import content
 from app.admin import admin_commands, is_admin
@@ -366,6 +366,7 @@ async def handle_contact(
     await storage.save_contact(message.from_user, message.contact)
     known_contact_user_ids.add(message.from_user.id)
     await storage.mark_discord_access_sent(message.from_user)
+    await remove_contact_keyboard(message)
     await send_discord_access_flow(message, settings)
 
 
@@ -470,6 +471,13 @@ async def send_discord_access_flow(message: Message, settings: Settings) -> None
     await message.answer(
         content.DISCORD_LINK_MESSAGE,
         reply_markup=discord_open_keyboard(),
+    )
+
+
+async def remove_contact_keyboard(message: Message) -> None:
+    await message.answer(
+        content.CONTACT_KEYBOARD_REMOVED_MESSAGE,
+        reply_markup=ReplyKeyboardRemove(),
     )
 
 

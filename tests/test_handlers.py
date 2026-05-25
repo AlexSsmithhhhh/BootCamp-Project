@@ -2,6 +2,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+from aiogram.types import ReplyKeyboardRemove
+
 from app import content
 from app.discord_invites import DiscordInvite
 from app.handlers import (
@@ -176,10 +178,13 @@ class ContactFlowTests(unittest.IsolatedAsyncioTestCase):
 
         storage.save_contact.assert_awaited_once_with(user, contact)
         storage.mark_discord_access_sent.assert_awaited_once_with(user)
-        self.assertEqual(message.answer.await_count, 1)
+        self.assertEqual(message.answer.await_count, 2)
 
-        discord_message = message.answer.await_args_list[0]
+        cleanup_message = message.answer.await_args_list[0]
+        discord_message = message.answer.await_args_list[1]
 
+        self.assertEqual(cleanup_message.args[0], content.CONTACT_KEYBOARD_REMOVED_MESSAGE)
+        self.assertIsInstance(cleanup_message.kwargs["reply_markup"], ReplyKeyboardRemove)
         self.assertEqual(discord_message.args[0], content.DISCORD_LINK_MESSAGE)
         self.assertIn("Отлично, контакт получен", discord_message.args[0])
         self.assertIn("#start-here", discord_message.args[0])
