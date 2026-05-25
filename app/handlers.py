@@ -17,11 +17,11 @@ from app.keyboards import (
     WELCOME_SCHEDULE_CALLBACK,
     WELCOME_STREAMS_CALLBACK,
     contact_keyboard,
+    discord_generated_link_keyboard,
     discord_open_keyboard,
     quiz_start_keyboard,
     quiz_answer_keyboard,
     welcome_keyboard,
-    discord_url_keyboard,
 )
 from app.quiz import (
     CATEGORY_LABELS,
@@ -351,10 +351,11 @@ async def handle_discord_open(
 
     await storage.mark_discord_open_clicked(callback.from_user)
     invite_url = await resolve_discord_invite_url(callback.from_user, storage, settings)
-    await callback.message.edit_reply_markup(
-        reply_markup=discord_url_keyboard(invite_url),
+    await callback.message.answer(
+        content.DISCORD_LINK_READY_MESSAGE,
+        reply_markup=discord_generated_link_keyboard(invite_url),
     )
-    await callback.answer("Ссылка готова")
+    await callback.answer("Ссылка сгенерирована")
 
 
 @router.message(F.contact)

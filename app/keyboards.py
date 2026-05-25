@@ -127,12 +127,25 @@ def discord_url_keyboard(discord_invite_url: str) -> InlineKeyboardMarkup:
     )
 
 
-def discord_open_keyboard() -> InlineKeyboardMarkup:
+def discord_generated_link_keyboard(discord_invite_url: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
                     text=content.DISCORD_URL_BUTTON_TEXT,
+                    url=discord_invite_url,
+                )
+            ],
+        ]
+    )
+
+
+def discord_open_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=content.DISCORD_GENERATE_BUTTON_TEXT,
                     callback_data=DISCORD_OPEN_CALLBACK,
                 )
             ],

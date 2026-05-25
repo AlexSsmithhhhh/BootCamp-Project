@@ -193,7 +193,7 @@ class ContactFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(discord_message.kwargs["reply_markup"].inline_keyboard), 3)
         self.assertEqual(
             discord_message.kwargs["reply_markup"].inline_keyboard[0][0].text,
-            content.DISCORD_URL_BUTTON_TEXT,
+            content.DISCORD_GENERATE_BUTTON_TEXT,
         )
         self.assertEqual(
             discord_message.kwargs["reply_markup"].inline_keyboard[0][0].callback_data,
@@ -222,27 +222,22 @@ class ContactFlowTests(unittest.IsolatedAsyncioTestCase):
         await handle_discord_open(callback, storage, settings)
 
         storage.mark_discord_open_clicked.assert_awaited_once_with(user)
-        message.edit_reply_markup.assert_awaited_once()
-        edited_keyboard = message.edit_reply_markup.await_args.kwargs["reply_markup"]
+        message.edit_reply_markup.assert_not_called()
+        message.answer.assert_awaited_once()
+        generated_message = message.answer.await_args
+        generated_keyboard = generated_message.kwargs["reply_markup"]
 
-        self.assertEqual(len(edited_keyboard.inline_keyboard), 3)
+        self.assertEqual(generated_message.args[0], content.DISCORD_LINK_READY_MESSAGE)
+        self.assertEqual(len(generated_keyboard.inline_keyboard), 1)
         self.assertEqual(
-            edited_keyboard.inline_keyboard[0][0].text,
+            generated_keyboard.inline_keyboard[0][0].text,
             content.DISCORD_URL_BUTTON_TEXT,
         )
         self.assertEqual(
-            edited_keyboard.inline_keyboard[0][0].url,
+            generated_keyboard.inline_keyboard[0][0].url,
             "https://discord.gg/test",
         )
-        self.assertEqual(
-            edited_keyboard.inline_keyboard[1][0].callback_data,
-            WELCOME_STREAMS_CALLBACK,
-        )
-        self.assertEqual(
-            edited_keyboard.inline_keyboard[2][0].callback_data,
-            WELCOME_SCHEDULE_CALLBACK,
-        )
-        callback.answer.assert_awaited_once_with("Ссылка готова")
+        callback.answer.assert_awaited_once_with("Ссылка сгенерирована")
 
 
     async def test_discord_open_generates_unique_single_use_invite(self) -> None:
@@ -279,9 +274,11 @@ class ContactFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(saved_kwargs["max_uses"], 1)
         self.assertEqual(saved_kwargs["max_age_seconds"], 3600)
 
-        edited_keyboard = message.edit_reply_markup.await_args.kwargs["reply_markup"]
+        message.edit_reply_markup.assert_not_called()
+        message.answer.assert_awaited_once()
+        generated_keyboard = message.answer.await_args.kwargs["reply_markup"]
         self.assertEqual(
-            edited_keyboard.inline_keyboard[0][0].url,
+            generated_keyboard.inline_keyboard[0][0].url,
             "https://discord.gg/unique-code",
         )
 

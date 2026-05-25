@@ -160,8 +160,13 @@ DISCORD_LINK_MESSAGE = (
     "Основная активность, стримы и задания начнутся с <b>1 числа</b>."
 )
 DISCORD_OPEN_READY_MESSAGE = DISCORD_LINK_MESSAGE
+DISCORD_LINK_READY_MESSAGE = (
+    "<b>Ссылка сгенерирована.</b>\n\n"
+    "Нажми кнопку ниже, чтобы присоединиться к Discord-серверу BootCamp Open Week."
+)
 
 SHARE_CONTACT_BUTTON_TEXT = "Поделиться номером"
+DISCORD_GENERATE_BUTTON_TEXT = "Присоединиться"
 DISCORD_URL_BUTTON_TEXT = "Перейти в Discord"
 WELCOME_STREAMS_BUTTON_TEXT = "График стримов"
 WELCOME_SCHEDULE_BUTTON_TEXT = "Как будет проходить и расписание"
