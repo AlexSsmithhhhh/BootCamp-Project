@@ -12,9 +12,11 @@ from app.handlers import (
     handle_discord_open,
     handle_discord_link,
     handle_fallback,
+    handle_manual_phone_entry,
     handle_quiz_answer,
     handle_quiz_start,
     handle_start,
+    normalize_phone_number,
     send_quiz_result_message,
     start_message_for_state,
 )
@@ -282,6 +284,62 @@ class ContactFlowTests(unittest.IsolatedAsyncioTestCase):
             edited_keyboard.inline_keyboard[0][0].url,
             "https://discord.gg/unique-code",
         )
+
+
+class ManualPhoneEntryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_manual_phone_entry_unlocks_discord_for_admin_user(self) -> None:
+        user = SimpleNamespace(id=3007, first_name="Admin", last_name=None)
+        message = SimpleNamespace(
+            from_user=user,
+            text="+380 98 707 93 01",
+            answer=AsyncMock(),
+        )
+        storage = SimpleNamespace(
+            save_contact=AsyncMock(),
+            mark_discord_access_sent=AsyncMock(),
+        )
+        settings = SimpleNamespace(discord_invite_url="https://discord.gg/test")
+
+        await handle_manual_phone_entry(message, storage, settings)
+
+        storage.save_contact.assert_awaited_once()
+        saved_contact = storage.save_contact.await_args.args[1]
+        self.assertEqual(saved_contact.phone_number, "+380987079301")
+        storage.mark_discord_access_sent.assert_awaited_once_with(user)
+        self.assertEqual(message.answer.await_count, 2)
+        self.assertEqual(
+            message.answer.await_args_list[0].args[0],
+            content.CONTACT_KEYBOARD_REMOVED_MESSAGE,
+        )
+        self.assertEqual(message.answer.await_args_list[1].args[0], content.DISCORD_LINK_MESSAGE)
+
+    async def test_manual_phone_entry_reprompts_on_partial_plus(self) -> None:
+        user = SimpleNamespace(id=3008, first_name="Admin", last_name=None)
+        message = SimpleNamespace(from_user=user, text="+", answer=AsyncMock())
+        storage = SimpleNamespace(
+            save_contact=AsyncMock(),
+            mark_discord_access_sent=AsyncMock(),
+        )
+        settings = SimpleNamespace(discord_invite_url="https://discord.gg/test")
+
+        await handle_manual_phone_entry(message, storage, settings)
+
+        storage.save_contact.assert_not_called()
+        message.answer.assert_awaited_once()
+        self.assertEqual(message.answer.await_args.args[0], content.MANUAL_PHONE_INVALID_MESSAGE)
+        self.assertEqual(
+            message.answer.await_args.kwargs["reply_markup"].keyboard[0][0].text,
+            content.SHARE_CONTACT_BUTTON_TEXT,
+        )
+
+
+class PhoneNumberParsingTests(unittest.TestCase):
+    def test_normalizes_phone_variants(self) -> None:
+        self.assertEqual(normalize_phone_number("+380 98 707 93 01"), "+380987079301")
+        self.assertEqual(normalize_phone_number("380987079301"), "+380987079301")
+        self.assertEqual(normalize_phone_number("098 707 93 01"), "+380987079301")
+        self.assertIsNone(normalize_phone_number("+"))
+        self.assertIsNone(normalize_phone_number("new post"))
 
 
 class QuizResultMessageTests(unittest.TestCase):

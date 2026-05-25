@@ -1,10 +1,11 @@
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.filters import Command, CommandObject, CommandStart
-from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
+from aiogram.filters import BaseFilter, Command, CommandObject, CommandStart
+from aiogram.types import CallbackQuery, Contact, Message, ReplyKeyboardRemove
 
 from app import content
 from app.admin import admin_commands, is_admin
@@ -40,6 +41,26 @@ router = Router()
 known_contact_user_ids: set[int] = set()
 logger = logging.getLogger(__name__)
 CONTACT_PROMPT_COOLDOWN_SECONDS = 6 * 60 * 60
+PHONE_ENTRY_PATTERN = re.compile(r"^\+?[\d\s().-]+$")
+
+
+class ManualPhoneEntry(BaseFilter):
+    async def __call__(
+        self,
+        message: Message,
+        storage: EventStorage,
+        settings: Settings,
+    ) -> bool:
+        if message.from_user is None or not looks_like_phone_entry(message.text):
+            return False
+
+        if is_admin(message, settings):
+            draft = await storage.admin_post_draft(message.from_user.id)
+            if draft is not None:
+                return False
+
+        completed_attempt = await storage.latest_completed_quiz_attempt(message.from_user.id)
+        return completed_attempt is not None
 
 
 async def has_contact_access(storage: EventStorage, user_id: int) -> bool:
@@ -370,6 +391,36 @@ async def handle_contact(
     await send_discord_access_flow(message, settings)
 
 
+@router.message(ManualPhoneEntry())
+async def handle_manual_phone_entry(
+    message: Message,
+    storage: EventStorage,
+    settings: Settings,
+) -> None:
+    if message.from_user is None:
+        return
+
+    phone_number = normalize_phone_number(message.text)
+    if phone_number is None:
+        await message.answer(
+            content.MANUAL_PHONE_INVALID_MESSAGE,
+            reply_markup=contact_keyboard(),
+        )
+        return
+
+    contact = Contact(
+        phone_number=phone_number,
+        first_name=message.from_user.first_name or "",
+        last_name=getattr(message.from_user, "last_name", None),
+        user_id=message.from_user.id,
+    )
+    await storage.save_contact(message.from_user, contact)
+    known_contact_user_ids.add(message.from_user.id)
+    await storage.mark_discord_access_sent(message.from_user)
+    await remove_contact_keyboard(message)
+    await send_discord_access_flow(message, settings)
+
+
 admin_commands(router)
 
 
@@ -479,6 +530,32 @@ async def remove_contact_keyboard(message: Message) -> None:
         content.CONTACT_KEYBOARD_REMOVED_MESSAGE,
         reply_markup=ReplyKeyboardRemove(),
     )
+
+
+def looks_like_phone_entry(text: str | None) -> bool:
+    if text is None:
+        return False
+    stripped = text.strip()
+    if not stripped or not PHONE_ENTRY_PATTERN.fullmatch(stripped):
+        return False
+    digit_count = sum(char.isdigit() for char in stripped)
+    return stripped.startswith("+") or digit_count >= 7
+
+
+def normalize_phone_number(text: str | None) -> str | None:
+    if not looks_like_phone_entry(text):
+        return None
+    stripped = text.strip()
+    digits = "".join(char for char in stripped if char.isdigit())
+    if len(digits) < 10 or len(digits) > 15:
+        return None
+    if stripped.startswith("+"):
+        return f"+{digits}"
+    if digits.startswith("380") and len(digits) == 12:
+        return f"+{digits}"
+    if digits.startswith("0") and len(digits) == 10:
+        return f"+38{digits}"
+    return digits
 
 
 async def resolve_discord_invite_url(user, storage: EventStorage, settings: Settings) -> str:
