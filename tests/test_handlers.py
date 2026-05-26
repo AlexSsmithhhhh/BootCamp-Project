@@ -424,10 +424,19 @@ class QuizResultMessageTests(unittest.TestCase):
     def test_quiz_result_captions_fit_telegram_photo_limit(self) -> None:
         for result_key in QUIZ_RESULTS:
             with self.subTest(result_key=result_key):
+                caption = format_quiz_result_message(result_key, {})
+                visible_caption = caption.replace("<b>", "").replace("</b>", "")
                 self.assertLessEqual(
-                    len(format_quiz_result_message(result_key, {})),
+                    len(visible_caption),
                     1024,
                 )
+
+    def test_quiz_result_uses_current_no_gap_copy(self) -> None:
+        text = format_quiz_result_message(NO_GAP, {})
+
+        self.assertIn("Сформированный фундамент", text)
+        self.assertIn("методологией Cryptomann Academy", text)
+        self.assertIn("execution, журнал и review", text)
 
 
 class QuizResultFlowTests(unittest.IsolatedAsyncioTestCase):

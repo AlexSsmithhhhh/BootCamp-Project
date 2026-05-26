@@ -27,6 +27,7 @@ from app.keyboards import (
 )
 from app.quiz import (
     CATEGORY_LABELS,
+    NO_GAP,
     answer_display_label,
     format_question,
     get_option,
@@ -717,4 +718,6 @@ async def send_photo_caption(
 
 def format_quiz_result_message(result_key: str, scores: dict[str, int]) -> str:
     result = result_for_key(result_key)
+    if result_key == NO_GAP:
+        return result.message
     return f"{result.message}\n\n{content.QUIZ_COMPLETED_EXPLANATION_MESSAGE}"
