@@ -66,17 +66,24 @@ class StartHandlerTests(unittest.IsolatedAsyncioTestCase):
     async def test_start_sends_bootcamp_welcome_with_info_buttons(self) -> None:
         user = SimpleNamespace(id=1001)
         command = SimpleNamespace(args="utm_source_instagram")
-        message = SimpleNamespace(from_user=user, answer=AsyncMock(), answer_photo=AsyncMock())
+        bot = SimpleNamespace(send_photo=AsyncMock())
+        message = SimpleNamespace(
+            from_user=user,
+            chat=SimpleNamespace(id=1001),
+            bot=bot,
+            answer=AsyncMock(),
+        )
         storage = SimpleNamespace(record_start=AsyncMock())
 
         await handle_start(message, command, storage)
 
         storage.record_start.assert_awaited_once_with(user, "utm_source_instagram")
         message.answer.assert_not_called()
-        message.answer_photo.assert_awaited_once()
-        sent_photo = message.answer_photo.await_args.kwargs["photo"]
-        sent_text = message.answer_photo.await_args.kwargs["caption"]
-        sent_keyboard = message.answer_photo.await_args.kwargs["reply_markup"]
+        bot.send_photo.assert_awaited_once()
+        self.assertEqual(bot.send_photo.await_args.kwargs["chat_id"], 1001)
+        sent_photo = bot.send_photo.await_args.kwargs["photo"]
+        sent_text = bot.send_photo.await_args.kwargs["caption"]
+        sent_keyboard = bot.send_photo.await_args.kwargs["reply_markup"]
 
         self.assertEqual(sent_photo.path, media.WELCOME_IMAGE_PATH)
         self.assertEqual(sent_text, content.WELCOME_MESSAGE)
@@ -221,11 +228,13 @@ class ContactFlowTests(unittest.IsolatedAsyncioTestCase):
     async def test_contact_unlocks_discord_button_only(self) -> None:
         user = SimpleNamespace(id=3003)
         contact = SimpleNamespace(user_id=3003)
+        bot = SimpleNamespace(send_photo=AsyncMock())
         message = SimpleNamespace(
             from_user=user,
             contact=contact,
+            chat=SimpleNamespace(id=3003),
+            bot=bot,
             answer=AsyncMock(),
-            answer_photo=AsyncMock(),
         )
         storage = SimpleNamespace(
             latest_completed_quiz_attempt=AsyncMock(return_value={"id": 1}),
@@ -239,14 +248,15 @@ class ContactFlowTests(unittest.IsolatedAsyncioTestCase):
         storage.save_contact.assert_awaited_once_with(user, contact)
         storage.mark_discord_access_sent.assert_awaited_once_with(user)
         self.assertEqual(message.answer.await_count, 1)
-        message.answer_photo.assert_awaited_once()
+        bot.send_photo.assert_awaited_once()
 
         cleanup_message = message.answer.await_args_list[0]
-        discord_message = message.answer_photo.await_args
+        discord_message = bot.send_photo.await_args
 
         self.assertEqual(cleanup_message.args[0], content.CONTACT_KEYBOARD_REMOVAL_MESSAGE)
         self.assertIsInstance(cleanup_message.kwargs["reply_markup"], ReplyKeyboardRemove)
         message.answer.return_value.delete.assert_awaited_once()
+        self.assertEqual(discord_message.kwargs["chat_id"], 3003)
         self.assertEqual(discord_message.kwargs["photo"].path, media.DISCORD_ACCESS_IMAGE_PATH)
         self.assertEqual(discord_message.kwargs["caption"], content.DISCORD_LINK_MESSAGE)
         self.assertIn("Отлично, контакт получен", discord_message.kwargs["caption"])
@@ -347,11 +357,13 @@ class ContactFlowTests(unittest.IsolatedAsyncioTestCase):
 class ManualPhoneEntryTests(unittest.IsolatedAsyncioTestCase):
     async def test_manual_phone_entry_unlocks_discord_for_admin_user(self) -> None:
         user = SimpleNamespace(id=3007, first_name="Admin", last_name=None)
+        bot = SimpleNamespace(send_photo=AsyncMock())
         message = SimpleNamespace(
             from_user=user,
             text="+380 98 707 93 01",
+            chat=SimpleNamespace(id=3007),
+            bot=bot,
             answer=AsyncMock(),
-            answer_photo=AsyncMock(),
         )
         storage = SimpleNamespace(
             save_contact=AsyncMock(),
@@ -366,13 +378,13 @@ class ManualPhoneEntryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(saved_contact.phone_number, "+380987079301")
         storage.mark_discord_access_sent.assert_awaited_once_with(user)
         self.assertEqual(message.answer.await_count, 1)
-        message.answer_photo.assert_awaited_once()
+        bot.send_photo.assert_awaited_once()
         self.assertEqual(
             message.answer.await_args_list[0].args[0],
             content.CONTACT_KEYBOARD_REMOVAL_MESSAGE,
         )
         message.answer.return_value.delete.assert_awaited_once()
-        self.assertEqual(message.answer_photo.await_args.kwargs["caption"], content.DISCORD_LINK_MESSAGE)
+        self.assertEqual(bot.send_photo.await_args.kwargs["caption"], content.DISCORD_LINK_MESSAGE)
 
     async def test_manual_phone_entry_reprompts_on_partial_plus(self) -> None:
         user = SimpleNamespace(id=3008, first_name="Admin", last_name=None)
@@ -441,28 +453,33 @@ class QuizResultMessageTests(unittest.TestCase):
 
 class QuizResultFlowTests(unittest.IsolatedAsyncioTestCase):
     async def test_quiz_result_is_new_message_after_inline_test(self) -> None:
+        bot = SimpleNamespace(send_photo=AsyncMock())
         message = SimpleNamespace(
             edit_reply_markup=AsyncMock(),
+            chat=SimpleNamespace(id=4001),
+            bot=bot,
             answer=AsyncMock(),
-            answer_photo=AsyncMock(),
         )
 
         await send_quiz_result_message(message, SYSTEM_GAP, {SYSTEM_GAP: 1})
 
         message.edit_reply_markup.assert_awaited_once_with(reply_markup=None)
         message.answer.assert_not_called()
-        message.answer_photo.assert_awaited_once()
-        self.assertEqual(message.answer_photo.await_args.kwargs["photo"].path, media.result_image_path(SYSTEM_GAP))
-        sent_text = message.answer_photo.await_args.kwargs["caption"]
+        bot.send_photo.assert_awaited_once()
+        self.assertEqual(bot.send_photo.await_args.kwargs["chat_id"], 4001)
+        self.assertEqual(bot.send_photo.await_args.kwargs["photo"].path, media.result_image_path(SYSTEM_GAP))
+        sent_text = bot.send_photo.await_args.kwargs["caption"]
         self.assertIn("Твоя проблема", sent_text)
         self.assertIn("Твой результат", sent_text)
 
     async def test_completed_quiz_always_requests_contact_for_full_flow(self) -> None:
         user = SimpleNamespace(id=3005)
+        bot = SimpleNamespace(send_photo=AsyncMock())
         message = SimpleNamespace(
             edit_reply_markup=AsyncMock(),
+            chat=SimpleNamespace(id=3005),
+            bot=bot,
             answer=AsyncMock(),
-            answer_photo=AsyncMock(),
         )
         callback = SimpleNamespace(
             from_user=user,
@@ -499,7 +516,7 @@ class QuizResultFlowTests(unittest.IsolatedAsyncioTestCase):
 
         storage.complete_quiz_attempt.assert_awaited_once()
         storage.mark_contact_prompted.assert_awaited_once_with(user)
-        message.answer_photo.assert_awaited_once()
+        bot.send_photo.assert_awaited_once()
         message.answer.assert_awaited_once()
         self.assertEqual(message.answer.await_args.args[0], content.CONTACT_REQUIRED_MESSAGE)
 

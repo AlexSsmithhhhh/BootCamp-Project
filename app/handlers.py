@@ -704,16 +704,21 @@ async def send_photo_caption(
         await message.answer(caption, reply_markup=reply_markup)
         return
 
-    answer_photo = getattr(message, "answer_photo", None)
-    if answer_photo is None:
+    bot = getattr(message, "bot", None)
+    chat = getattr(message, "chat", None)
+    chat_id = getattr(chat, "id", None)
+    if bot is None or chat_id is None:
+        logger.warning("Cannot send image asset=%s: missing bot or chat id", image_path.name)
         await message.answer(caption, reply_markup=reply_markup)
         return
 
-    await answer_photo(
+    await bot.send_photo(
+        chat_id=chat_id,
         photo=FSInputFile(image_path),
         caption=caption,
         reply_markup=reply_markup,
     )
+    logger.info("Sent image caption asset=%s chat_id=%s", image_path.name, chat_id)
 
 
 def format_quiz_result_message(result_key: str, scores: dict[str, int]) -> str:
