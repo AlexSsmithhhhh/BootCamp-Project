@@ -1,13 +1,15 @@
 import logging
 import re
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import BaseFilter, Command, CommandObject, CommandStart
-from aiogram.types import CallbackQuery, Contact, Message, ReplyKeyboardRemove
+from aiogram.types import CallbackQuery, Contact, FSInputFile, Message, ReplyKeyboardRemove
 
 from app import content
+from app import media
 from app.admin import admin_commands, is_admin
 from app.config import Settings
 from app.discord_invites import DiscordInviteError, create_discord_invite
@@ -127,7 +129,9 @@ async def handle_start(
         return
 
     await storage.record_start(message.from_user, command.args)
-    await message.answer(
+    await send_photo_caption(
+        message,
+        media.WELCOME_IMAGE_PATH,
         content.WELCOME_MESSAGE,
         reply_markup=quiz_start_keyboard(content.PASS_QUIZ_BUTTON_TEXT),
     )
@@ -159,7 +163,9 @@ async def handle_schedule_info(
         await callback.answer("Не могу продолжить здесь.", show_alert=True)
         return
 
-    await callback.message.answer(
+    await send_photo_caption(
+        callback.message,
+        media.SCHEDULE_IMAGE_PATH,
         content.SCHEDULE_INFO_MESSAGE,
     )
     await callback.answer()
@@ -543,11 +549,17 @@ async def send_quiz_result_message(
     scores: dict[str, int],
 ) -> None:
     await clear_quiz_keyboard(message)
-    await message.answer(format_quiz_result_message(result_key, scores))
+    await send_photo_caption(
+        message,
+        media.result_image_path(result_key),
+        format_quiz_result_message(result_key, scores),
+    )
 
 
 async def send_discord_access_flow(message: Message, settings: Settings) -> None:
-    await message.answer(
+    await send_photo_caption(
+        message,
+        media.DISCORD_ACCESS_IMAGE_PATH,
         content.DISCORD_LINK_MESSAGE,
         reply_markup=discord_open_keyboard(),
     )
@@ -677,6 +689,30 @@ async def replace_quiz_message(
         if "message is not modified" in str(exc).lower():
             return
         await message.answer(text, reply_markup=reply_markup)
+
+
+async def send_photo_caption(
+    message: Message,
+    image_path: Path,
+    caption: str,
+    *,
+    reply_markup=None,
+) -> None:
+    if not image_path.exists():
+        logger.warning("Image asset is missing: %s", image_path)
+        await message.answer(caption, reply_markup=reply_markup)
+        return
+
+    answer_photo = getattr(message, "answer_photo", None)
+    if answer_photo is None:
+        await message.answer(caption, reply_markup=reply_markup)
+        return
+
+    await answer_photo(
+        photo=FSInputFile(image_path),
+        caption=caption,
+        reply_markup=reply_markup,
+    )
 
 
 def format_quiz_result_message(result_key: str, scores: dict[str, int]) -> str:

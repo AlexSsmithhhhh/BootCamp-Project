@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 from aiogram.types import ReplyKeyboardRemove
 
-from app import content
+from app import content, media
 from app.discord_invites import DiscordInvite
 from app.handlers import (
     format_quiz_result_message,
@@ -33,6 +33,7 @@ from app.keyboards import (
 from app.quiz import (
     EXECUTION_GAP,
     NO_GAP,
+    QUIZ_RESULTS,
     ROUTINE_GAP,
     SYSTEM_GAP,
     format_question,
@@ -65,16 +66,19 @@ class StartHandlerTests(unittest.IsolatedAsyncioTestCase):
     async def test_start_sends_bootcamp_welcome_with_info_buttons(self) -> None:
         user = SimpleNamespace(id=1001)
         command = SimpleNamespace(args="utm_source_instagram")
-        message = SimpleNamespace(from_user=user, answer=AsyncMock())
+        message = SimpleNamespace(from_user=user, answer=AsyncMock(), answer_photo=AsyncMock())
         storage = SimpleNamespace(record_start=AsyncMock())
 
         await handle_start(message, command, storage)
 
         storage.record_start.assert_awaited_once_with(user, "utm_source_instagram")
-        message.answer.assert_awaited_once()
-        sent_text = message.answer.await_args.args[0]
-        sent_keyboard = message.answer.await_args.kwargs["reply_markup"]
+        message.answer.assert_not_called()
+        message.answer_photo.assert_awaited_once()
+        sent_photo = message.answer_photo.await_args.kwargs["photo"]
+        sent_text = message.answer_photo.await_args.kwargs["caption"]
+        sent_keyboard = message.answer_photo.await_args.kwargs["reply_markup"]
 
+        self.assertEqual(sent_photo.path, media.WELCOME_IMAGE_PATH)
         self.assertEqual(sent_text, content.WELCOME_MESSAGE)
         self.assertEqual(
             sent_keyboard.inline_keyboard[0][0].callback_data,
@@ -217,7 +221,12 @@ class ContactFlowTests(unittest.IsolatedAsyncioTestCase):
     async def test_contact_unlocks_discord_button_only(self) -> None:
         user = SimpleNamespace(id=3003)
         contact = SimpleNamespace(user_id=3003)
-        message = SimpleNamespace(from_user=user, contact=contact, answer=AsyncMock())
+        message = SimpleNamespace(
+            from_user=user,
+            contact=contact,
+            answer=AsyncMock(),
+            answer_photo=AsyncMock(),
+        )
         storage = SimpleNamespace(
             latest_completed_quiz_attempt=AsyncMock(return_value={"id": 1}),
             save_contact=AsyncMock(),
@@ -229,17 +238,19 @@ class ContactFlowTests(unittest.IsolatedAsyncioTestCase):
 
         storage.save_contact.assert_awaited_once_with(user, contact)
         storage.mark_discord_access_sent.assert_awaited_once_with(user)
-        self.assertEqual(message.answer.await_count, 2)
+        self.assertEqual(message.answer.await_count, 1)
+        message.answer_photo.assert_awaited_once()
 
         cleanup_message = message.answer.await_args_list[0]
-        discord_message = message.answer.await_args_list[1]
+        discord_message = message.answer_photo.await_args
 
         self.assertEqual(cleanup_message.args[0], content.CONTACT_KEYBOARD_REMOVAL_MESSAGE)
         self.assertIsInstance(cleanup_message.kwargs["reply_markup"], ReplyKeyboardRemove)
         message.answer.return_value.delete.assert_awaited_once()
-        self.assertEqual(discord_message.args[0], content.DISCORD_LINK_MESSAGE)
-        self.assertIn("Отлично, контакт получен", discord_message.args[0])
-        self.assertIn("#start-here", discord_message.args[0])
+        self.assertEqual(discord_message.kwargs["photo"].path, media.DISCORD_ACCESS_IMAGE_PATH)
+        self.assertEqual(discord_message.kwargs["caption"], content.DISCORD_LINK_MESSAGE)
+        self.assertIn("Отлично, контакт получен", discord_message.kwargs["caption"])
+        self.assertIn("#start-here", discord_message.kwargs["caption"])
         self.assertEqual(len(discord_message.kwargs["reply_markup"].inline_keyboard), 2)
         self.assertEqual(
             discord_message.kwargs["reply_markup"].inline_keyboard[0][0].text,
@@ -340,6 +351,7 @@ class ManualPhoneEntryTests(unittest.IsolatedAsyncioTestCase):
             from_user=user,
             text="+380 98 707 93 01",
             answer=AsyncMock(),
+            answer_photo=AsyncMock(),
         )
         storage = SimpleNamespace(
             save_contact=AsyncMock(),
@@ -353,13 +365,14 @@ class ManualPhoneEntryTests(unittest.IsolatedAsyncioTestCase):
         saved_contact = storage.save_contact.await_args.args[1]
         self.assertEqual(saved_contact.phone_number, "+380987079301")
         storage.mark_discord_access_sent.assert_awaited_once_with(user)
-        self.assertEqual(message.answer.await_count, 2)
+        self.assertEqual(message.answer.await_count, 1)
+        message.answer_photo.assert_awaited_once()
         self.assertEqual(
             message.answer.await_args_list[0].args[0],
             content.CONTACT_KEYBOARD_REMOVAL_MESSAGE,
         )
         message.answer.return_value.delete.assert_awaited_once()
-        self.assertEqual(message.answer.await_args_list[1].args[0], content.DISCORD_LINK_MESSAGE)
+        self.assertEqual(message.answer_photo.await_args.kwargs["caption"], content.DISCORD_LINK_MESSAGE)
 
     async def test_manual_phone_entry_reprompts_on_partial_plus(self) -> None:
         user = SimpleNamespace(id=3008, first_name="Admin", last_name=None)
@@ -408,22 +421,40 @@ class QuizResultMessageTests(unittest.TestCase):
         self.assertNotIn("System Gap", text)
         self.assertNotIn("оставить контакт", text)
 
+    def test_quiz_result_captions_fit_telegram_photo_limit(self) -> None:
+        for result_key in QUIZ_RESULTS:
+            with self.subTest(result_key=result_key):
+                self.assertLessEqual(
+                    len(format_quiz_result_message(result_key, {})),
+                    1024,
+                )
+
 
 class QuizResultFlowTests(unittest.IsolatedAsyncioTestCase):
     async def test_quiz_result_is_new_message_after_inline_test(self) -> None:
-        message = SimpleNamespace(edit_reply_markup=AsyncMock(), answer=AsyncMock())
+        message = SimpleNamespace(
+            edit_reply_markup=AsyncMock(),
+            answer=AsyncMock(),
+            answer_photo=AsyncMock(),
+        )
 
         await send_quiz_result_message(message, SYSTEM_GAP, {SYSTEM_GAP: 1})
 
         message.edit_reply_markup.assert_awaited_once_with(reply_markup=None)
-        message.answer.assert_awaited_once()
-        sent_text = message.answer.await_args.args[0]
+        message.answer.assert_not_called()
+        message.answer_photo.assert_awaited_once()
+        self.assertEqual(message.answer_photo.await_args.kwargs["photo"].path, media.result_image_path(SYSTEM_GAP))
+        sent_text = message.answer_photo.await_args.kwargs["caption"]
         self.assertIn("Твоя проблема", sent_text)
         self.assertIn("Твой результат", sent_text)
 
     async def test_completed_quiz_always_requests_contact_for_full_flow(self) -> None:
         user = SimpleNamespace(id=3005)
-        message = SimpleNamespace(edit_reply_markup=AsyncMock(), answer=AsyncMock())
+        message = SimpleNamespace(
+            edit_reply_markup=AsyncMock(),
+            answer=AsyncMock(),
+            answer_photo=AsyncMock(),
+        )
         callback = SimpleNamespace(
             from_user=user,
             message=message,
@@ -459,8 +490,9 @@ class QuizResultFlowTests(unittest.IsolatedAsyncioTestCase):
 
         storage.complete_quiz_attempt.assert_awaited_once()
         storage.mark_contact_prompted.assert_awaited_once_with(user)
-        self.assertEqual(message.answer.await_count, 2)
-        self.assertEqual(message.answer.await_args_list[1].args[0], content.CONTACT_REQUIRED_MESSAGE)
+        message.answer_photo.assert_awaited_once()
+        message.answer.assert_awaited_once()
+        self.assertEqual(message.answer.await_args.args[0], content.CONTACT_REQUIRED_MESSAGE)
 
 
 class PostQuizInfoKeyboardTests(unittest.TestCase):
