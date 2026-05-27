@@ -781,6 +781,28 @@ def link_buttons_keyboard(buttons: list[dict[str, str]]) -> Optional[InlineKeybo
     )
 
 
+def payload_reply_markup(payload: str | Payload) -> Optional[InlineKeyboardMarkup]:
+    buttons = payload_buttons(payload)
+    if not buttons:
+        return None
+    rows = []
+    for button in buttons:
+        if button.get("url"):
+            rows.append([InlineKeyboardButton(text=button["text"], url=button["url"])])
+        elif button.get("callback_data"):
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=button["text"],
+                        callback_data=button["callback_data"],
+                    )
+                ]
+            )
+    if not rows:
+        return None
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 def missing_channel_setup_message() -> str:
     return "\n".join(
         [
@@ -967,21 +989,33 @@ def payload_from_draft(draft: dict[str, Any]) -> Optional[Payload]:
 
 def payload_buttons(payload: str | Payload) -> list[dict[str, str]]:
     normalized_payload = normalize_payload(payload)
-    buttons = normalized_payload.get("buttons")
-    if not isinstance(buttons, list):
-        return []
+    raw_buttons = []
+    url_buttons = normalized_payload.get("buttons")
+    callback_buttons = normalized_payload.get("callback_buttons")
+    if isinstance(url_buttons, list):
+        raw_buttons.extend(url_buttons)
+    if isinstance(callback_buttons, list):
+        raw_buttons.extend(callback_buttons)
     normalized_buttons = []
-    for button in buttons:
+    for button in raw_buttons:
         if not isinstance(button, dict):
             continue
         raw_text = button.get("text")
-        raw_url = button.get("url")
-        if not isinstance(raw_text, str) or not isinstance(raw_url, str):
+        if not isinstance(raw_text, str):
             continue
         text = parse_required_text(raw_text)
-        url = parse_required_text(raw_url)
+        raw_url = button.get("url")
+        raw_callback_data = button.get("callback_data")
+        url = parse_required_text(raw_url) if isinstance(raw_url, str) else None
+        callback_data = (
+            parse_required_text(raw_callback_data)
+            if isinstance(raw_callback_data, str)
+            else None
+        )
         if text and url:
             normalized_buttons.append({"text": text, "url": url})
+        elif text and callback_data:
+            normalized_buttons.append({"text": text, "callback_data": callback_data[:64]})
     return normalized_buttons
 
 
@@ -1426,8 +1460,7 @@ async def send_payload_to_chat(
 ) -> list[Message]:
     normalized_payload = normalize_payload(payload)
     kind = normalized_payload["kind"]
-    buttons = payload_buttons(normalized_payload)
-    reply_markup = link_buttons_keyboard(buttons)
+    reply_markup = payload_reply_markup(normalized_payload)
     if kind == "text":
         sent = await bot.send_message(chat_id, normalized_payload["text"], reply_markup=reply_markup)
         return [sent]

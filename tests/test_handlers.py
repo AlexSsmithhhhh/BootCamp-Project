@@ -8,6 +8,7 @@ from app import content, media
 from app.discord_invites import DiscordInvite
 from app.handlers import (
     format_quiz_result_message,
+    handle_bootcamp_next_step,
     handle_contact,
     handle_contact_button_request,
     handle_discord_open,
@@ -22,6 +23,7 @@ from app.handlers import (
     start_message_for_state,
 )
 from app.keyboards import (
+    BOOTCAMP_NEXT_STEP_CALLBACK,
     DISCORD_OPEN_CALLBACK,
     QUIZ_START_CALLBACK,
     WELCOME_SCHEDULE_CALLBACK,
@@ -248,59 +250,52 @@ class FallbackGateTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ContactFlowTests(unittest.IsolatedAsyncioTestCase):
-    async def test_contact_unlocks_discord_button_only(self) -> None:
+    async def test_bootcamp_next_step_prompts_for_contact(self) -> None:
+        user = SimpleNamespace(id=3002)
+        message = SimpleNamespace(answer=AsyncMock())
+        callback = SimpleNamespace(from_user=user, message=message, answer=AsyncMock())
+        storage = SimpleNamespace(record_message_interaction=AsyncMock())
+
+        await handle_bootcamp_next_step(callback, storage)
+
+        storage.record_message_interaction.assert_awaited_once_with(
+            user,
+            "bootcamp_next_step_requested",
+        )
+        message.answer.assert_awaited_once()
+        self.assertEqual(message.answer.await_args.args[0], content.BOOTCAMP_NEXT_STEP_CONTACT_MESSAGE)
+        self.assertEqual(
+            message.answer.await_args.kwargs["reply_markup"].keyboard[0][0].text,
+            content.SHARE_CONTACT_BUTTON_TEXT,
+        )
+        callback.answer.assert_awaited_once_with("Оставь контакт, и менеджер свяжется с тобой")
+
+    async def test_contact_saves_lead_for_manager(self) -> None:
         user = SimpleNamespace(id=3003)
         contact = SimpleNamespace(user_id=3003)
-        bot = SimpleNamespace(send_photo=AsyncMock())
         message = SimpleNamespace(
             from_user=user,
             contact=contact,
             chat=SimpleNamespace(id=3003),
-            bot=bot,
             answer=AsyncMock(),
         )
         storage = SimpleNamespace(
-            latest_completed_quiz_attempt=AsyncMock(return_value={"id": 1}),
             save_contact=AsyncMock(),
-            mark_discord_access_sent=AsyncMock(),
         )
         settings = SimpleNamespace(discord_invite_url="https://discord.gg/test")
 
         await handle_contact(message, storage, settings)
 
         storage.save_contact.assert_awaited_once_with(user, contact)
-        storage.mark_discord_access_sent.assert_awaited_once_with(user)
-        self.assertEqual(message.answer.await_count, 1)
-        bot.send_photo.assert_awaited_once()
+        self.assertEqual(message.answer.await_count, 2)
 
         cleanup_message = message.answer.await_args_list[0]
-        discord_message = bot.send_photo.await_args
+        thanks_message = message.answer.await_args_list[1]
 
         self.assertEqual(cleanup_message.args[0], content.CONTACT_KEYBOARD_REMOVAL_MESSAGE)
         self.assertIsInstance(cleanup_message.kwargs["reply_markup"], ReplyKeyboardRemove)
         message.answer.return_value.delete.assert_awaited_once()
-        self.assertEqual(discord_message.kwargs["chat_id"], 3003)
-        self.assertEqual(discord_message.kwargs["photo"].path, media.DISCORD_ACCESS_IMAGE_PATH)
-        self.assertEqual(discord_message.kwargs["caption"], content.DISCORD_LINK_MESSAGE)
-        self.assertIn("Доступ открыт", discord_message.kwargs["caption"])
-        self.assertIn("#start-here", discord_message.kwargs["caption"])
-        self.assertEqual(len(discord_message.kwargs["reply_markup"].inline_keyboard), 2)
-        self.assertEqual(
-            discord_message.kwargs["reply_markup"].inline_keyboard[0][0].text,
-            content.DISCORD_GENERATE_BUTTON_TEXT,
-        )
-        self.assertEqual(
-            discord_message.kwargs["reply_markup"].inline_keyboard[0][0].callback_data,
-            DISCORD_OPEN_CALLBACK,
-        )
-        self.assertEqual(
-            discord_message.kwargs["reply_markup"].inline_keyboard[1][0].callback_data,
-            WELCOME_SCHEDULE_CALLBACK,
-        )
-        self.assertEqual(
-            discord_message.kwargs["reply_markup"].inline_keyboard[1][0].text,
-            content.DISCORD_SCHEDULE_BUTTON_TEXT,
-        )
+        self.assertEqual(thanks_message.args[0], content.BOOTCAMP_CONTACT_RECEIVED_MESSAGE)
 
     async def test_discord_open_callback_records_click_and_reveals_url(self) -> None:
         user = SimpleNamespace(id=3004)
@@ -378,19 +373,16 @@ class ContactFlowTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ManualPhoneEntryTests(unittest.IsolatedAsyncioTestCase):
-    async def test_manual_phone_entry_unlocks_discord_for_admin_user(self) -> None:
+    async def test_manual_phone_entry_saves_lead_for_manager(self) -> None:
         user = SimpleNamespace(id=3007, first_name="Admin", last_name=None)
-        bot = SimpleNamespace(send_photo=AsyncMock())
         message = SimpleNamespace(
             from_user=user,
             text="+380 98 707 93 01",
             chat=SimpleNamespace(id=3007),
-            bot=bot,
             answer=AsyncMock(),
         )
         storage = SimpleNamespace(
             save_contact=AsyncMock(),
-            mark_discord_access_sent=AsyncMock(),
         )
         settings = SimpleNamespace(discord_invite_url="https://discord.gg/test")
 
@@ -399,22 +391,22 @@ class ManualPhoneEntryTests(unittest.IsolatedAsyncioTestCase):
         storage.save_contact.assert_awaited_once()
         saved_contact = storage.save_contact.await_args.args[1]
         self.assertEqual(saved_contact.phone_number, "+380987079301")
-        storage.mark_discord_access_sent.assert_awaited_once_with(user)
-        self.assertEqual(message.answer.await_count, 1)
-        bot.send_photo.assert_awaited_once()
+        self.assertEqual(message.answer.await_count, 2)
         self.assertEqual(
             message.answer.await_args_list[0].args[0],
             content.CONTACT_KEYBOARD_REMOVAL_MESSAGE,
         )
         message.answer.return_value.delete.assert_awaited_once()
-        self.assertEqual(bot.send_photo.await_args.kwargs["caption"], content.DISCORD_LINK_MESSAGE)
+        self.assertEqual(
+            message.answer.await_args_list[1].args[0],
+            content.BOOTCAMP_CONTACT_RECEIVED_MESSAGE,
+        )
 
     async def test_manual_phone_entry_reprompts_on_partial_plus(self) -> None:
         user = SimpleNamespace(id=3008, first_name="Admin", last_name=None)
         message = SimpleNamespace(from_user=user, text="+", answer=AsyncMock())
         storage = SimpleNamespace(
             save_contact=AsyncMock(),
-            mark_discord_access_sent=AsyncMock(),
         )
         settings = SimpleNamespace(discord_invite_url="https://discord.gg/test")
 

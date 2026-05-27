@@ -267,6 +267,26 @@ class AdminPostFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(keyboard.inline_keyboard[0][0].text, "Open")
         self.assertEqual(keyboard.inline_keyboard[0][0].url, "https://example.com")
 
+    async def test_send_payload_attaches_callback_buttons(self) -> None:
+        bot = FakeBot()
+
+        await send_payload_to_chat(
+            bot,
+            2001,
+            {
+                "kind": "text",
+                "text": "Hello with callback",
+                "callback_buttons": [
+                    {"text": "Наступний крок", "callback_data": "bootcamp:next_step"}
+                ],
+            },
+        )
+
+        keyboard = bot.message_kwargs[0]["reply_markup"]
+        self.assertEqual(bot.sent_messages, [(2001, "Hello with callback")])
+        self.assertEqual(keyboard.inline_keyboard[0][0].text, "Наступний крок")
+        self.assertEqual(keyboard.inline_keyboard[0][0].callback_data, "bootcamp:next_step")
+
     async def test_manage_lists_jobs_with_delete_buttons(self) -> None:
         scheduled_at = datetime(2026, 5, 20, 14, 0, tzinfo=timezone.utc)
         with TemporaryDirectory() as tmp_dir:

@@ -14,6 +14,7 @@ from app.admin import admin_commands, is_admin
 from app.config import Settings
 from app.discord_invites import DiscordInviteError, create_discord_invite
 from app.keyboards import (
+    BOOTCAMP_NEXT_STEP_CALLBACK,
     DISCORD_OPEN_CALLBACK,
     QUIZ_START_CALLBACK,
     WELCOME_SCHEDULE_CALLBACK,
@@ -61,8 +62,7 @@ class ManualPhoneEntry(BaseFilter):
             if draft is not None:
                 return False
 
-        completed_attempt = await storage.latest_completed_quiz_attempt(message.from_user.id)
-        return completed_attempt is not None
+        return True
 
 
 async def has_contact_access(storage: EventStorage, user_id: int) -> bool:
@@ -345,6 +345,23 @@ async def handle_discord_open(
     await callback.answer("Ссылка сгенерирована")
 
 
+@router.callback_query(F.data == BOOTCAMP_NEXT_STEP_CALLBACK)
+async def handle_bootcamp_next_step(
+    callback: CallbackQuery,
+    storage: EventStorage,
+) -> None:
+    await storage.record_message_interaction(callback.from_user, "bootcamp_next_step_requested")
+    if callback.message is None:
+        await callback.answer("Не могу продолжить здесь.", show_alert=True)
+        return
+
+    await callback.message.answer(
+        content.BOOTCAMP_NEXT_STEP_CONTACT_MESSAGE,
+        reply_markup=contact_keyboard(),
+    )
+    await callback.answer("Оставь контакт, и менеджер свяжется с тобой")
+
+
 @router.message(F.contact)
 async def handle_contact(
     message: Message,
@@ -352,18 +369,6 @@ async def handle_contact(
     settings: Settings,
 ) -> None:
     if message.from_user is None or message.contact is None:
-        return
-
-    completed_attempt = await storage.latest_completed_quiz_attempt(message.from_user.id)
-    if completed_attempt is None:
-        await storage.record_message_interaction(
-            message.from_user,
-            "contact_rejected_before_quiz_result",
-        )
-        await message.answer(
-            content.DISCORD_REQUIRES_QUIZ_MESSAGE,
-            reply_markup=quiz_start_keyboard(content.PASS_QUIZ_BUTTON_TEXT),
-        )
         return
 
     if message.contact.user_id not in (None, message.from_user.id):
@@ -374,9 +379,8 @@ async def handle_contact(
 
     await storage.save_contact(message.from_user, message.contact)
     known_contact_user_ids.add(message.from_user.id)
-    await storage.mark_discord_access_sent(message.from_user)
     await remove_contact_keyboard(message)
-    await send_discord_access_flow(message, settings)
+    await message.answer(content.BOOTCAMP_CONTACT_RECEIVED_MESSAGE)
 
 
 @router.message(ManualPhoneEntry())
@@ -404,9 +408,8 @@ async def handle_manual_phone_entry(
     )
     await storage.save_contact(message.from_user, contact)
     known_contact_user_ids.add(message.from_user.id)
-    await storage.mark_discord_access_sent(message.from_user)
     await remove_contact_keyboard(message)
-    await send_discord_access_flow(message, settings)
+    await message.answer(content.BOOTCAMP_CONTACT_RECEIVED_MESSAGE)
 
 
 admin_commands(router)

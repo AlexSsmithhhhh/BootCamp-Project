@@ -149,6 +149,26 @@ CONTACT_RECEIVED_MESSAGE = (
 
 CONTACT_KEYBOARD_REMOVAL_MESSAGE = "."
 
+BOOTCAMP_NEXT_STEP_BROADCAST_MESSAGE = (
+    "<b>Open Week — это была первая диагностика.</b>\n\n"
+    "Если после неё ты понял, что хочешь системно поработать над своей торговлей, "
+    "следующий шаг — узнать больше про формат Bootcamp.\n\n"
+    "На Bootcamp мы глубже разбираем твой торговый процесс: стратегию, рутину, риск, "
+    "исполнение, журнал и психологию.\n\n"
+    "Нажми <b>«Наступний крок»</b>, если хочешь понять, как это может выглядеть именно для тебя."
+)
+
+BOOTCAMP_NEXT_STEP_CONTACT_MESSAGE = (
+    "<b>Оставь свой контакт, и менеджер свяжется с тобой.</b>\n\n"
+    "Он расскажет, как проходит Bootcamp, кому подходит формат и какой следующий шаг "
+    "будет логичным под твою ситуацию в торговле."
+)
+
+BOOTCAMP_CONTACT_RECEIVED_MESSAGE = (
+    "<b>Спасибо, контакт получили.</b>\n\n"
+    "Менеджер свяжется с тобой и ответит на вопросы по формату Bootcamp."
+)
+
 DISCORD_LINK_MESSAGE = (
     "<b>Доступ открыт.</b>\n\n"
     "Следующий шаг — присоединиться к Discord-серверу <b>BootCamp Open Week</b>.\n\n"
@@ -166,6 +186,7 @@ DISCORD_LINK_READY_MESSAGE = (
 )
 
 SHARE_CONTACT_BUTTON_TEXT = "Поделиться номером"
+BOOTCAMP_NEXT_STEP_BUTTON_TEXT = "Наступний крок"
 DISCORD_GENERATE_BUTTON_TEXT = "Присоединиться"
 DISCORD_URL_BUTTON_TEXT = "Перейти в Discord"
 WELCOME_STREAMS_BUTTON_TEXT = "График стримов"

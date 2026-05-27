@@ -15,6 +15,7 @@ QUIZ_START_CALLBACK = "quiz:start"
 QUIZ_ANSWER_PREFIX = "quiz:answer"
 QUIZ_BACK_PREFIX = "quiz:back"
 DISCORD_OPEN_CALLBACK = "discord:open"
+BOOTCAMP_NEXT_STEP_CALLBACK = "bootcamp:next_step"
 
 
 def contact_keyboard() -> ReplyKeyboardMarkup:
