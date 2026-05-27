@@ -43,7 +43,6 @@ from app.storage import EventStorage
 router = Router()
 known_contact_user_ids: set[int] = set()
 logger = logging.getLogger(__name__)
-CONTACT_PROMPT_COOLDOWN_SECONDS = 6 * 60 * 60
 PHONE_ENTRY_PATTERN = re.compile(r"^\+?[\d\s().-]+$")
 
 
@@ -84,40 +83,6 @@ def start_message_for_state(*, is_new_user: bool, has_contact: bool) -> str:
     if is_new_user:
         return content.START_MESSAGE
     return content.RETURNING_WITHOUT_CONTACT_MESSAGE
-
-
-async def send_contact_prompt(
-    message: Message,
-    storage: EventStorage,
-    *,
-    user=None,
-    force: bool = False,
-    quiet_if_recent: bool = False,
-) -> None:
-    prompt_user = user or message.from_user
-    if prompt_user is None:
-        return
-
-    should_prompt = force or await storage.should_prompt_contact(
-        prompt_user.id,
-        cooldown_seconds=CONTACT_PROMPT_COOLDOWN_SECONDS,
-    )
-    if should_prompt:
-        await storage.mark_contact_prompted(prompt_user)
-        await message.answer(content.CONTACT_REQUIRED_MESSAGE, reply_markup=contact_keyboard())
-        return
-
-    if quiet_if_recent:
-        return
-
-    await message.answer(
-        (
-            "Контакт уже запрошен после результата диагностики. "
-            "Нажми кнопку <b>«Поделиться номером»</b> внизу чата. "
-            "Если кнопка пропала, отправь <code>/contact</code>."
-        ),
-        reply_markup=contact_keyboard(),
-    )
 
 
 @router.message(CommandStart())
@@ -248,7 +213,8 @@ async def handle_quiz_answer(
         scores=outcome.scores,
     )
     await send_quiz_result_message(callback.message, outcome.result_key, outcome.scores)
-    await send_contact_prompt(callback.message, storage, user=callback.from_user, force=True)
+    await storage.mark_discord_access_sent(callback.from_user)
+    await send_discord_access_flow(callback.message, settings)
 
 
 @router.callback_query(F.data.regexp(r"^quiz:back:\d+$"))
@@ -319,12 +285,8 @@ async def handle_discord_link(
     await storage.record_message_interaction(message.from_user, "discord_link_requested")
     completed_attempt = await storage.latest_completed_quiz_attempt(message.from_user.id)
     if completed_attempt is not None:
-        if await has_contact_access(storage, message.from_user.id):
-            await storage.mark_discord_access_sent(message.from_user)
-            await send_discord_access_flow(message, settings)
-            return
-
-        await send_contact_prompt(message, storage, force=True)
+        await storage.mark_discord_access_sent(message.from_user)
+        await send_discord_access_flow(message, settings)
         return
 
     await message.answer(
@@ -351,12 +313,8 @@ async def handle_contact_button_request(
         )
         return
 
-    if await has_contact_access(storage, message.from_user.id):
-        await storage.mark_discord_access_sent(message.from_user)
-        await send_discord_access_flow(message, settings)
-        return
-
-    await send_contact_prompt(message, storage, force=True)
+    await storage.mark_discord_access_sent(message.from_user)
+    await send_discord_access_flow(message, settings)
 
 
 @router.callback_query(F.data == DISCORD_OPEN_CALLBACK)
@@ -376,11 +334,6 @@ async def handle_discord_open(
             reply_markup=quiz_start_keyboard(content.PASS_QUIZ_BUTTON_TEXT),
         )
         await callback.answer("Сначала нужно пройти диагностику.")
-        return
-
-    if not await has_contact_access(storage, callback.from_user.id):
-        await send_contact_prompt(callback.message, storage, user=callback.from_user, force=True)
-        await callback.answer("Сначала нужно поделиться контактом.")
         return
 
     await storage.mark_discord_open_clicked(callback.from_user)
@@ -497,12 +450,8 @@ async def handle_fallback(
 
     completed_attempt = await storage.latest_completed_quiz_attempt(message.from_user.id)
     if completed_attempt is not None:
-        if has_contact:
-            await storage.mark_discord_access_sent(message.from_user)
-            await send_discord_access_flow(message, settings)
-            return
-
-        await send_contact_prompt(message, storage, force=True)
+        await storage.mark_discord_access_sent(message.from_user)
+        await send_discord_access_flow(message, settings)
         return
 
     await message.answer(

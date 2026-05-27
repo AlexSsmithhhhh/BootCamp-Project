@@ -143,14 +143,42 @@ class DiscordAccessGateTests(unittest.IsolatedAsyncioTestCase):
             QUIZ_START_CALLBACK,
         )
 
-    async def test_contact_command_restores_contact_button_after_quiz(self) -> None:
-        user = SimpleNamespace(id=1003)
-        message = SimpleNamespace(from_user=user, answer=AsyncMock())
+    async def test_discord_command_opens_access_after_quiz_without_contact(self) -> None:
+        user = SimpleNamespace(id=1005)
+        bot = SimpleNamespace(send_photo=AsyncMock())
+        message = SimpleNamespace(
+            from_user=user,
+            chat=SimpleNamespace(id=1005),
+            bot=bot,
+            answer=AsyncMock(),
+        )
         storage = SimpleNamespace(
             record_message_interaction=AsyncMock(),
             latest_completed_quiz_attempt=AsyncMock(return_value={"id": 1}),
-            user_has_contact=AsyncMock(return_value=False),
-            mark_contact_prompted=AsyncMock(),
+            mark_discord_access_sent=AsyncMock(),
+        )
+        settings = SimpleNamespace(discord_invite_url="https://discord.gg/test")
+
+        await handle_discord_link(message, storage, settings)
+
+        storage.mark_discord_access_sent.assert_awaited_once_with(user)
+        message.answer.assert_not_called()
+        bot.send_photo.assert_awaited_once()
+        self.assertEqual(bot.send_photo.await_args.kwargs["photo"].path, media.DISCORD_ACCESS_IMAGE_PATH)
+
+    async def test_contact_command_opens_discord_after_quiz(self) -> None:
+        user = SimpleNamespace(id=1003)
+        bot = SimpleNamespace(send_photo=AsyncMock())
+        message = SimpleNamespace(
+            from_user=user,
+            chat=SimpleNamespace(id=1003),
+            bot=bot,
+            answer=AsyncMock(),
+        )
+        storage = SimpleNamespace(
+            record_message_interaction=AsyncMock(),
+            latest_completed_quiz_attempt=AsyncMock(return_value={"id": 1}),
+            mark_discord_access_sent=AsyncMock(),
         )
         settings = SimpleNamespace(discord_invite_url="https://discord.gg/test")
 
@@ -160,16 +188,11 @@ class DiscordAccessGateTests(unittest.IsolatedAsyncioTestCase):
             user,
             "contact_button_requested",
         )
-        storage.mark_contact_prompted.assert_awaited_once_with(user)
-        message.answer.assert_awaited_once()
-        sent_text = message.answer.await_args.args[0]
-        sent_keyboard = message.answer.await_args.kwargs["reply_markup"]
-        self.assertEqual(sent_text, content.CONTACT_REQUIRED_MESSAGE)
-        self.assertIn("/contact", sent_text)
-        self.assertEqual(
-            sent_keyboard.keyboard[0][0].text,
-            content.SHARE_CONTACT_BUTTON_TEXT,
-        )
+        storage.mark_discord_access_sent.assert_awaited_once_with(user)
+        message.answer.assert_not_called()
+        bot.send_photo.assert_awaited_once()
+        self.assertEqual(bot.send_photo.await_args.kwargs["photo"].path, media.DISCORD_ACCESS_IMAGE_PATH)
+        self.assertEqual(bot.send_photo.await_args.kwargs["caption"], content.DISCORD_LINK_MESSAGE)
 
     async def test_contact_command_routes_to_quiz_before_result(self) -> None:
         user = SimpleNamespace(id=1004)
@@ -259,7 +282,7 @@ class ContactFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(discord_message.kwargs["chat_id"], 3003)
         self.assertEqual(discord_message.kwargs["photo"].path, media.DISCORD_ACCESS_IMAGE_PATH)
         self.assertEqual(discord_message.kwargs["caption"], content.DISCORD_LINK_MESSAGE)
-        self.assertIn("Отлично, контакт получен", discord_message.kwargs["caption"])
+        self.assertIn("Доступ открыт", discord_message.kwargs["caption"])
         self.assertIn("#start-here", discord_message.kwargs["caption"])
         self.assertEqual(len(discord_message.kwargs["reply_markup"].inline_keyboard), 2)
         self.assertEqual(
@@ -472,7 +495,7 @@ class QuizResultFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Твоя проблема", sent_text)
         self.assertIn("Твой результат", sent_text)
 
-    async def test_completed_quiz_always_requests_contact_for_full_flow(self) -> None:
+    async def test_completed_quiz_opens_discord_access_without_contact(self) -> None:
         user = SimpleNamespace(id=3005)
         bot = SimpleNamespace(send_photo=AsyncMock())
         message = SimpleNamespace(
@@ -508,17 +531,21 @@ class QuizResultFlowTests(unittest.IsolatedAsyncioTestCase):
                 },
             ),
             complete_quiz_attempt=AsyncMock(),
-            mark_contact_prompted=AsyncMock(),
+            mark_discord_access_sent=AsyncMock(),
         )
         settings = SimpleNamespace(discord_invite_url="https://discord.gg/test")
 
         await handle_quiz_answer(callback, storage, settings)
 
         storage.complete_quiz_attempt.assert_awaited_once()
-        storage.mark_contact_prompted.assert_awaited_once_with(user)
-        bot.send_photo.assert_awaited_once()
-        message.answer.assert_awaited_once()
-        self.assertEqual(message.answer.await_args.args[0], content.CONTACT_REQUIRED_MESSAGE)
+        storage.mark_discord_access_sent.assert_awaited_once_with(user)
+        self.assertEqual(bot.send_photo.await_count, 2)
+        result_photo = bot.send_photo.await_args_list[0]
+        access_photo = bot.send_photo.await_args_list[1]
+        self.assertEqual(result_photo.kwargs["photo"].path, media.result_image_path(SYSTEM_GAP))
+        self.assertEqual(access_photo.kwargs["photo"].path, media.DISCORD_ACCESS_IMAGE_PATH)
+        self.assertEqual(access_photo.kwargs["caption"], content.DISCORD_LINK_MESSAGE)
+        message.answer.assert_not_called()
 
 
 class PostQuizInfoKeyboardTests(unittest.TestCase):
