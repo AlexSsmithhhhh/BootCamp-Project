@@ -1027,6 +1027,29 @@ class EventStorage:
             await db.commit()
             return int(cursor.lastrowid)
 
+    async def scheduled_job_exists(
+        self,
+        *,
+        job_type: str,
+        text: str,
+        scheduled_at: datetime,
+    ) -> bool:
+        scheduled_at_value = _datetime_to_utc_iso(scheduled_at)
+        async with aiosqlite.connect(self.database_path) as db:
+            row = await _fetch_one(
+                db,
+                """
+                SELECT id
+                FROM scheduled_jobs
+                WHERE job_type = ?
+                  AND text = ?
+                  AND scheduled_at = ?
+                LIMIT 1
+                """,
+                (job_type, text, scheduled_at_value),
+            )
+        return row is not None
+
     async def due_scheduled_jobs(self, limit: int = 10) -> list[dict[str, Any]]:
         now = _utc_now()
         async with aiosqlite.connect(self.database_path) as db:

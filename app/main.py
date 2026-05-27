@@ -7,6 +7,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
+from app.campaigns import ensure_bootcamp_next_step_broadcast
 from app.config import ConfigurationError, Settings
 from app.handlers import router
 from app.scheduler import run_scheduler
@@ -17,6 +18,7 @@ async def run_bot() -> None:
     settings = Settings.from_env()
     storage = EventStorage(settings.database_path)
     await storage.init()
+    await ensure_bootcamp_next_step_broadcast(storage)
 
     bot = Bot(
         token=settings.telegram_bot_token,
