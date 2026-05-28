@@ -21,7 +21,7 @@ const P = {
   ViewChannel: 1n << 10n,
 };
 
-const traderWrite = new Set(['fx-chat', 'crypto-chat', 'questions', 'lounge-chat']);
+const traderWrite = new Set(['work-chat', 'questions', 'lounge-chat']);
 const traderVoice = new Set(['stage', 'lounge-voice']);
 const traderRead = new Set(['start-here', 'announcements', 'leaderboard', 'psycho', 'workspace']);
 const traderCategories = new Set(['Onboarding', 'work', 'lounge', 'materials']);

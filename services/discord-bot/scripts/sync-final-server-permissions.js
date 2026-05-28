@@ -42,7 +42,7 @@ const roleNames = {
   trader: 'trader',
 };
 
-const traderTextChannels = new Set(['fx-chat', 'crypto-chat', 'questions', 'lounge-chat']);
+const traderTextChannels = new Set(['work-chat', 'questions', 'lounge-chat']);
 const traderVoiceChannels = new Set(['lounge-voice', 'stage']);
 const traderReadOnlyChannels = new Set(['start-here', 'announcements', 'leaderboard', 'psycho', 'workspace']);
 const traderVisibleCategories = new Set(['onboarding', 'work', 'lounge', 'materials']);

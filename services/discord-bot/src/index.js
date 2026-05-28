@@ -218,6 +218,10 @@ client.on(Events.MessageReactionAdd, async (reaction, reactor) => {
       return;
     }
 
+    if (!isWorkingChannel(reaction.message.channel, config)) {
+      return;
+    }
+
     const member = await reaction.message.guild.members.fetch(reactor.id);
     if (!isMentorOrSupport(member, config)) {
       return;

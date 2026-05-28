@@ -13,7 +13,7 @@
 ## Scoring
 
 - +2 балла за содержательное сообщение в рабочих чатах, без дневного лимита (антиспам-фильтр остается).
-- +10 баллов за любую реакцию от роли Mentor/Support, без дневного лимита.
+- +10 баллов за реакцию от роли Mentor/Support в рабочем чате, без дневного лимита.
 - +25 баллов за каждую stage-сессию от 15 минут, без дневного лимита.
 - Роль `Mentor`, `ментор`, `Support`, `саппорт` или `наставник` может вручную начислять баллы командой `/award-points`.
 - Пользователи с mentor/support-ролью не отображаются в публичном leaderboard.
@@ -23,7 +23,7 @@
 
 - `LEADERBOARD_CHANNEL_ID` - канал dashboard. Сейчас это `leaderboard`.
 - `LEADERBOARD_MESSAGE_ID` - fixed dashboard message. If it is set, the bot edits only this message and never creates a replacement automatically.
-- `LEADERBOARD_WORKING_CHANNEL_IDS` - рабочие чаты. Сейчас это `fx-chat` и `crypto-chat`.
+- `LEADERBOARD_WORKING_CHANNEL_IDS` - рабочий чат. Сейчас это ID канала `work-chat`.
 - `LEADERBOARD_PUBLIC_LIMIT` - сколько участников показывать в публичном dashboard, по умолчанию `5`.
 - `LEADERBOARD_BACKFILL_ON_STARTUP` - включить восстановление истории рабочих каналов при старте, по умолчанию `true`.
 - `LEADERBOARD_BACKFILL_DAYS` - сколько дней истории читать при восстановлении, по умолчанию `14`.
